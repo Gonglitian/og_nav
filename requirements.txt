@@ -1,5 +1,2 @@
 omnigibson
-torch
-numpy
-opencv-python
 matplotlib

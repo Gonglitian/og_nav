@@ -4,15 +4,12 @@ setup(
     name="og_nav",
     version="1.0.0",
     description="A modular navigation system for robot navigation in OmniGibson environments.",
-    author="Your Name",
-    author_email="your.email@example.com",
-    url="https://github.com/your-repo/og_nav",
+    author="Litian Gong",
+    author_email="gonglitian2002@gmail.com",
+    url="https://github.com/Gonglitian/og_nav",
     packages=find_packages(),
     install_requires=[
         "omnigibson",
-        "torch",
-        "numpy",
-        "opencv-python",
         "matplotlib"
     ],
     python_requires=">=3.8",
@@ -25,7 +22,6 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            # 可选: 添加命令行入口
         ]
     },
 )
