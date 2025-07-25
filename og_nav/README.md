@@ -2,6 +2,33 @@
 
 A modular navigation system for robot navigation in OmniGibson environments.
 
+## 📦 Installation
+
+You can install this package and its dependencies with pip:
+
+```bash
+pip install .
+# or from source repo
+git clone https://github.com/Gonglitian/og_nav.git
+cd og_nav/og_nav
+pip install .
+```
+
+### Requirements
+
+- Python >= 3.8
+- OmniGibson
+- PyTorch
+- NumPy
+- OpenCV (opencv-python)
+- Matplotlib
+
+You can also install all dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## 📁 Project Structure
 
 ```
