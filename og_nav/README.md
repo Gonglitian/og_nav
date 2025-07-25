@@ -9,8 +9,8 @@ You can install this package and its dependencies with pip:
 ```bash
 pip install .
 # or from source repo
-git clone https://github.com/your-repo/og_nav.git
-cd og_nav
+git clone https://github.com/Gonglitian/og_nav.git
+cd og_nav/og_nav
 pip install .
 ```
 
