@@ -1,0 +1,45 @@
+scene:
+  type: InteractiveTraversableScene
+  
+  # === 基础场景配置 ===
+  scene_model: Pomaria_1_int              # 场景模型名称
+  # scene_instance: scene_instance_0      # 可选：具体场景实例
+  # scene_file: /path/to/custom_scene.json # 可选：自定义场景文件
+  
+  # === 导航地图配置 ===
+  trav_map_resolution: 0.1                  # 可穿越性地图分辨率(米)
+  default_erosion_radius: 0.0               # 地图边缘侵蚀半径(米)
+  trav_map_with_objects: true                # 地图构建时是否考虑对象
+  num_waypoints: 10                         # 路径规划返回的航点数量
+  waypoint_resolution: 0.2                  # 航点间的最小距离(米)
+  
+  # === 对象加载过滤 ===
+  # load_object_categories:                 # 只加载这些类别
+  #   - floors
+  #   - walls
+  #   - furniture
+  not_load_object_categories:             # 排除这些类别
+    - door                                # 排除门类对象
+  #   - decorations                       # 排除装饰品
+  #   - small_objects                     # 排除小物体
+  
+  # === 房间加载过滤 ===
+  # load_room_types:                        # 只加载这些房间类型
+  #   - living_room
+  #   - kitchen
+  # load_room_instances:                    # 只加载这些房间实例
+  #   - living_room_0
+  #   - kitchen_1
+  
+  # === 任务和语义配置 ===
+  load_task_relevant_only: false            # 是否只加载任务相关对象
+  seg_map_resolution: 0.1                   # 语义分割地图分辨率
+  
+  # === 机器人和环境配置 ===
+  include_robots: false                     # 是否包含场景中预定义的机器人
+  use_floor_plane: false                    # 交互场景通常设为False
+  floor_plane_visible: true                 # 地面可见性
+  floor_plane_color: [1.0, 1.0, 1.0]      # 地面颜色(RGB)
+  use_skybox: true                          # 是否使用天空盒
+
+objects: []  # 添加自定义对象
