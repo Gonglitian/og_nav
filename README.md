@@ -1,6 +1,7 @@
 # OG Nav - Modular Navigation System
 
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/og_nav.svg)](https://pypi.org/project/og_nav/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![OmniGibson](https://img.shields.io/badge/OmniGibson-Compatible-green.svg)](https://github.com/StanfordVL/OmniGibson)
 
@@ -51,7 +52,13 @@ A comprehensive, modular navigation system designed for robot navigation in Omni
 - OmniGibson (latest version)
 - NVIDIA GPU with CUDA support (recommended)
 
-### Quick Installation
+### Install from PyPI (Recommended)
+
+```bash
+pip install og_nav
+```
+
+### Development Installation
 
 ```bash
 # Clone the repository
@@ -60,9 +67,6 @@ cd og_nav
 
 # Install in development mode
 pip install -e .
-
-# Or install from PyPI (when available)
-pip install og_nav
 ```
 
 ### Dependencies
@@ -81,6 +85,7 @@ The package automatically installs the following dependencies:
 ```python
 import omnigibson as og
 from og_nav import NavigationInterface
+from og_nav.core.config_loader import NavigationConfig
 
 # Create environment
 config_path = "og_nav/configs/navigation_config.yaml"
@@ -95,7 +100,7 @@ navigator = NavigationInterface(env, robot, nav_config.og_nav_config)
 navigator.set_goal((2.0, 3.0))  # Move to position (2.0, 3.0)
 
 # Main navigation loop
-while not navigator.arrived:
+while not navigator.is_arrived():
     navigator.update()
     env.step([])
 

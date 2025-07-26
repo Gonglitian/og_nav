@@ -9,7 +9,8 @@ __pycache__/
 *.pyd
 .Python
 *.so
-og_nav.egg-info/
+og_nav/og_nav.egg-info/
+og_nav/assets/
 
 # Development files
 test.py

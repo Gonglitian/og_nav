@@ -14,18 +14,12 @@ og_nav:
   # Path Tracking Controller Configuration
   controller:
     lookahead_distance: 0.5           # Pure pursuit lookahead distance (m)
-    cruise_speed: 0.5                 # Constant forward speed (m/s)
+    cruise_speed: 0.3                 # Constant forward speed (m/s)
     max_angular_vel: 0.2              # Maximum angular velocity (rad/s)
     waypoint_threshold: 0.2           # Distance threshold for waypoint arrival (m)
 
   # Robot Configuration
   robot:
-    # Robot starting position [x, y, z]
-    start_position: [-2, -0.3, 0]
-    
-    # Goal position [x, y, z]  
-    goal_position: [-1, -0.3, 0]
-    
     # Robot reset pose (all joint positions)
     reset_pose: [
       # Base joints (6 DOF: x, y, z, rx, ry, rz)
@@ -68,7 +62,7 @@ scene:
 
 robots:
   - type: Tiago
-    position: [-2, -0.3, 0]
+    position: [-2.2, -2, 0]
     reset_joint_pos: [
       # Base joints (6 DOF: x, y, z, rx, ry, rz)
       0, 0, 0, 0, 0, 0,

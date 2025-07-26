@@ -267,8 +267,6 @@ class RobotConfig:
     @staticmethod
     def get_default_cfg() -> Dict[str, Any]:
         return {
-            'start_position': [-2, -0.3, 0],
-            'goal_position': [-1, -0.3, 0],
             'reset_pose': [
                 0, 0, 0, 0, 0, 0,  # Base joints
                 0,  # Trunk

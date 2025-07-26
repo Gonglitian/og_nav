@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools_scm>=8.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "og_nav"
-version = "1.0.0"
+dynamic = ["version"]
 description = "A modular navigation system for robot navigation in OmniGibson environments."
 authors = [
   { name = "Litian Gong", email = "gonglitian2002@gmail.com" }
@@ -40,7 +40,13 @@ Homepage = "https://github.com/Gonglitian/og_nav"
 Repository = "https://github.com/Gonglitian/og_nav"
 
 [tool.setuptools.packages.find]
-where = ["og_nav"]
+where = ["."]
+include = ["og_nav*"]
 
 [tool.setuptools.package-data]
-"og_nav" = ["configs/*.yaml", "assets/*"] 
+"og_nav" = ["configs/*.yaml", "assets/*"]
+
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+write_to = "og_nav/_version.py" 

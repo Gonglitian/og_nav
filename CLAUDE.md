@@ -14,7 +14,6 @@ pip install -r requirements.txt
 
 # Run demos
 python -m og_nav.demos.navigation_demo
-python -m og_nav.demos.planning_tracking_demo
 ```
 
 ### Configuration Testing
@@ -64,8 +63,9 @@ class ModuleClass:
 - Point validation through `is_point_available()` and `find_nearest_available_point()`
 
 **Control Systems (og_nav/control/)**
-- `PathTrackingController`: Pure Pursuit algorithm implementation
+- `PathTrackingController`: Pure Pursuit algorithm implementation with simplified control() method
 - `PIDController`: Generic PID controller with configurable gains and limits
+- `ArrivalState`: Centralized arrival status management for consistent state tracking
 - Action tensor management for Tiago robot base control (indices 0-2)
 
 **Mapping (og_nav/mapping/)**
@@ -121,3 +121,120 @@ objects: []  # Visualization markers auto-injected here
 - Configuration system includes comprehensive self-tests
 - Module initialization validates constructor argument priority
 - Demo files serve as integration tests for the complete navigation pipeline
+
+## Recent Architecture Improvements
+
+### Arrival State Management Refactoring (2025)
+The navigation system underwent a major refactoring to eliminate redundant arrival detection logic and improve code clarity:
+
+**Problem Solved:**
+- Multiple conflicting arrival state sources (NavigationInterface.arrived, PathTrackingController.control() return value, controller.is_arrived())
+- Inconsistent state synchronization between components
+- Complex and unclear arrival detection logic scattered across multiple classes
+
+**Solution Implemented:**
+
+**1. ArrivalState Class (og_nav/control/arrival_state.py)**
+```python
+class ArrivalState:
+    """Centralized arrival state management"""
+    def update(self, current_pos, path, threshold, current_target_idx=None):
+        # Unified arrival detection logic
+    def is_arrived(self) -> bool:
+        # Single source of truth for arrival status
+    def reset(self):
+        # Clean state reset for new paths
+```
+
+**2. Simplified PathTrackingController**
+- `control()` method now returns only `th.Tensor` (was `Tuple[th.Tensor, bool]`)
+- Removed internal `_arrived_logged` and `_check_arrival_condition()` 
+- Uses ArrivalState for all arrival detection
+- Cleaner separation of control logic and state management
+
+**3. Streamlined NavigationInterface**
+- Removed redundant `self.arrived` attribute
+- `update()` method simplified: `action = self.controller.control()`
+- `is_arrived()` delegates to controller for single data source
+- Elimination of state synchronization issues
+
+**4. Improved Demo Code**
+- Uses `navigator.is_arrived()` instead of `navigator.controller.is_arrived()`
+- Follows proper encapsulation principles
+- Consistent interface usage throughout
+
+**Benefits Achieved:**
+- **Single Source of Truth**: All arrival status managed by ArrivalState
+- **Cleaner APIs**: Simplified method signatures and return values  
+- **Better Encapsulation**: External code uses unified NavigationInterface
+- **Reduced Complexity**: Centralized arrival logic, easier debugging
+- **Eliminated Race Conditions**: No more state synchronization issues
+
+**Usage Pattern:**
+```python
+# NavigationInterface usage (recommended)
+if navigator.is_arrived():
+    # Handle arrival
+
+# PathTrackingController usage (internal)
+action = controller.control()  # Only returns action tensor
+if controller.is_arrived():    # Check arrival separately
+    # Handle arrival
+```
+
+This refactoring significantly improved code maintainability and eliminated a major source of bugs in the navigation system.
+
+## Development Guidelines
+
+### API Design Principles
+1. **Single Responsibility**: Each class should have one clear purpose
+2. **Single Source of Truth**: Avoid duplicating state across multiple components
+3. **Clean Interfaces**: Methods should have simple, predictable signatures
+4. **Proper Encapsulation**: External code should use public interfaces, not access internals directly
+
+### Code Quality Standards
+- **Type Hints**: All public methods must include proper type annotations
+- **Docstrings**: Comprehensive documentation for all public APIs  
+- **Error Handling**: Prefer exceptions over silent failures for invalid configurations
+- **Modular Design**: Clean separation between configuration, control, planning, and visualization
+
+### Common Patterns to Follow
+
+**Module Configuration Pattern:**
+```python
+class ModuleClass:
+    @staticmethod
+    def get_default_cfg() -> Dict[str, Any]:
+        return {
+            'param1': default_value,
+            'param2': default_value
+        }
+    
+    def __init__(self, ..., config: Optional[dict] = None):
+        default_config = self.get_default_cfg()
+        merged_config = default_config.copy()
+        if config is not None:
+            merged_config.update(config)
+        # Use merged_config for initialization
+```
+
+**State Management Pattern:**
+- Use dedicated state classes for complex state logic (like ArrivalState)
+- Avoid state duplication across multiple classes
+- Provide clear reset mechanisms for state objects
+
+**Interface Design Pattern:**
+- High-level interfaces (like NavigationInterface) should hide implementation details
+- Delegate to specialized components rather than implementing everything internally
+- Provide simple, consistent method signatures
+
+### Testing and Validation
+- Test configuration loading: `python -c "from og_nav.core.config_loader import NavigationConfig; print('Config system working')"`
+- Test component initialization: Ensure all modules can be imported and initialized
+- Run demos as integration tests: `python -m og_nav.demos.navigation_demo`
+
+### Common Pitfalls to Avoid
+1. **Don't access internal components directly**: Use `navigator.is_arrived()` not `navigator.controller.is_arrived()`
+2. **Don't duplicate state**: If multiple classes need the same information, create a shared state manager
+3. **Don't mix responsibilities**: Keep control logic separate from state management
+4. **Don't ignore error handling**: Invalid configs should raise exceptions, not use fallback values silently

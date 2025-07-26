@@ -6,11 +6,11 @@ using a clean, minimal setup.
 """
 
 import omnigibson as og
-from omnigibson.robots.tiago import Tiago
 from omnigibson import gm
 from og_nav.core import NavigationInterface
 from og_nav.core.config_loader import NavigationConfig
 import os
+import torch as th
 
 gm.GUI_VIEWPORT_ONLY = True
 
@@ -29,10 +29,13 @@ def main():
     print("Creating environment...")
     
     # Create environment using processed configuration
-    omnigibson_config = nav_config.get_omnigibson_config()
-    if omnigibson_config is None:
-        raise ValueError("No OmniGibson configuration found")
-    env = og.Environment(configs=omnigibson_config)
+    env = og.Environment(configs=nav_config.omnigibson_config)
+    
+    og.sim.enable_viewer_camera_teleoperation()
+    og.sim.viewer_camera.set_position_orientation(
+        position=th.tensor([-11.6915,   0.2339,  22.3074]),
+        orientation=th.tensor([-0.0860,  0.0869,  0.7055, -0.6981]),
+    )
     
     robot = env.robots[0]
     
@@ -48,24 +51,23 @@ def main():
     # Set the first goal point
     if DEMO_GOAL_POINTS:
         goal = DEMO_GOAL_POINTS[current_goal_idx]
-        navigator.set_goal((goal[0], goal[1]))
+        navigator.set_goal(goal)
         print(f"Goal {current_goal_idx + 1}/{len(DEMO_GOAL_POINTS)}: Moving to [{goal[0]:.2f}, {goal[1]:.2f}]")
     
     # Main loop
     while True:
         # Update environment and navigation
-        navigator.update()
-        env.step([])
+        action = navigator.update()
+        env.step(action)
         
         # Check if current goal is reached
-        if navigator.controller.is_arrived():
+        if navigator.is_arrived():
             print(f"✓ Reached goal {current_goal_idx + 1}/{len(DEMO_GOAL_POINTS)}")
-            
             # Move to next goal point
             current_goal_idx += 1
             if current_goal_idx < len(DEMO_GOAL_POINTS):
                 goal = DEMO_GOAL_POINTS[current_goal_idx]
-                navigator.set_goal((goal[0], goal[1]))
+                navigator.set_goal(goal)
                 print(f"Goal {current_goal_idx + 1}/{len(DEMO_GOAL_POINTS)}: Moving to [{goal[0]:.2f}, {goal[1]:.2f}]")
             else:
                 print("🎉 All goal points visited! Demo completed.")

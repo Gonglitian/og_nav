@@ -135,15 +135,11 @@ class PathPlanner:
         print(f"Planning path from {start_pos} to {end_pos}")
 
         # Use OmniGibson's path planning
-        try:
-            self.waypoints_coords, _ = self.scene.trav_map.get_shortest_path(
-                0, start_pos, end_pos, entire_path=True, robot=self.robot
-            )
-            print(f"Path planned with {len(self.waypoints_coords)} waypoints")
-            return self.waypoints_coords
-        except Exception as e:
-            print(f"[Error] Path planning failed: {e}")
-            return None
+        self.waypoints_coords, _ = self.scene.trav_map.get_shortest_path(
+            0, start_pos, end_pos, entire_path=True, robot=self.robot
+        )
+        print(f"Path planned with {len(self.waypoints_coords)} waypoints")
+        return self.waypoints_coords
 
     def get_start_point_coords(self) -> Optional[Tuple[float, float]]:
         """Get current start point coordinates.

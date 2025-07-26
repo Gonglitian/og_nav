@@ -35,4 +35,9 @@ __all__ = [
     "OGMGenerator",
 ]
 
-__version__ = "1.0.0" 
+# Import version from setuptools_scm generated file
+try:
+    from og_nav._version import __version__
+except ImportError:
+    # Fallback for development installs without tags
+    __version__ = "0.0.0+unknown" 

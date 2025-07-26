@@ -60,7 +60,7 @@ class NavigationInterface:
         self.robot.controllers['arm_right']._command_input_limits = None
         
         # Update robot reset pose AABB extent
-        self.robot._reset_joint_pos_aabb_extent *= 1.2
+        self.robot._reset_joint_pos_aabb_extent *= 1.1
         
         # Initialize modules with their respective configurations
         ogm_config = self.config.get_ogm_config()
@@ -77,7 +77,6 @@ class NavigationInterface:
         self.ogm = OGMGenerator(config=ogm_config)
         
         # Initialize state variables
-        self.arrived = False
         self.step_count = 0
 
         # Adjust robot reset pose AABB extent
@@ -267,7 +266,6 @@ class NavigationInterface:
             return
 
         goal_position = position
-        self.arrived = False
         self.goal_position = goal_position
         
         # Set start point as current robot position
@@ -296,10 +294,10 @@ class NavigationInterface:
         self.step_count += 1
         
         # Get control action from the controller
-        action, self.arrived = self.controller.control()
+        action = self.controller.control()
         
         # If we've arrived at the goal, clear the path markers
-        if self.arrived:
+        if self.controller.is_arrived():
             self.clear_all_markers()
             
         # Set arm positions to navigation pose
@@ -318,3 +316,7 @@ class NavigationInterface:
             else:
                 raise NotImplementedError("Only Tiago robot is supported")
         return action
+
+    def is_arrived(self) -> bool:
+        """Check if the robot has arrived at the goal."""
+        return self.controller.is_arrived()

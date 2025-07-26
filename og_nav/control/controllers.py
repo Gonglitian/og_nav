@@ -13,6 +13,7 @@ import omnigibson.utils.transform_utils as T
 from omnigibson.robots.tiago import Tiago
 
 from og_nav.core.constants import TIAGO_BASE_ACTION_START_IDX, TIAGO_BASE_ACTION_END_IDX
+from og_nav.control.arrival_state import ArrivalState
 
 # Configure matplotlib for non-interactive backend
 matplotlib.use("Agg")
@@ -205,7 +206,9 @@ class PathTrackingController:
         # Path and tracking state
         self.path: List[Tuple[float, float]] = []
         self.current_target_idx = 0
-        self._arrived_logged = False  # Flag to track if arrival message has been logged
+        
+        # Centralized arrival state management
+        self._arrival_state = ArrivalState()
         
         # Robot base action indices
         self.base_start_idx, self.base_end_idx = (
@@ -251,7 +254,9 @@ class PathTrackingController:
             waypoints = [tuple(waypoint.tolist()) for waypoint in waypoints]
         self.path = waypoints.copy()
         self.current_target_idx = 0
-        self._arrived_logged = False  # Reset arrival logging flag for new path
+        
+        # Reset arrival state for new path
+        self._arrival_state.reset()
 
         # Clear previous logging data
         for key in self.data_logger:
@@ -333,56 +338,51 @@ class PathTrackingController:
             )
 
             if distance_to_target < self.waypoint_threshold:
-                self.current_target_idx += 1
                 print(
-                    f"Advanced to waypoint {self.current_target_idx}/{len(self.path)} {self.path[self.current_target_idx]}"
+                    f"Advanced to waypoint {self.current_target_idx + 1}/{len(self.path)} {self.path[self.current_target_idx]}"
                 )
+                self.current_target_idx += 1
             else:
                 break
 
-    def control(self) -> Tuple[th.Tensor, bool]:
+    def control(self) -> th.Tensor:
         """Compute control commands using Pure Pursuit algorithm.
 
         Returns:
-            Tuple of (action, arrived_flag):
-            - action: Robot action tensor with base control commands
-            - arrived_flag: True if robot has reached final target
+            Robot action tensor with base control commands
         """
         if not self.path:
             print("[Warning] No path set for Pure Pursuit controller")
-            return th.zeros(self.robot.action_dim), False
+            return th.zeros(self.robot.action_dim)
 
-        try:
-            # Get current robot state
-            current_pos, current_orientation = self.robot.get_position_orientation()
-            current_yaw = T.quat2euler(current_orientation)[2]
+        # Get current robot state
+        current_pos, current_orientation = self.robot.get_position_orientation()
+        current_yaw = T.quat2euler(current_orientation)[2]
 
-            # Update target waypoint based on current position
-            self.update_target_waypoint(current_pos)
+        # Update target waypoint based on current position
+        self.update_target_waypoint(current_pos)
 
-            # Check arrival condition (unified logic)
-            arrived = self._check_arrival_condition(current_pos)
-            
-            # If arrived, return zero action
-            if arrived:
-                return th.zeros(self.robot.action_dim), True
+        # Update arrival state
+        self._arrival_state.update(
+            current_pos, self.path, self.waypoint_threshold, self.current_target_idx
+        )
+        
+        # If arrived, return zero action
+        if self._arrival_state.is_arrived():
+            return th.zeros(self.robot.action_dim)
 
-            # Calculate control commands
-            control_vx, control_vy, control_w = self._calculate_control_commands(
-                current_pos, current_yaw
-            )
+        # Calculate control commands
+        control_vx, control_vy, control_w = self._calculate_control_commands(
+            current_pos, current_yaw
+        )
 
-            # Create action tensor
-            action = th.zeros(self.robot.action_dim)
-            action[self.base_start_idx : self.base_end_idx] = th.as_tensor(
-                [control_vx, control_vy, control_w]
-            )
+        # Create action tensor
+        action = th.zeros(self.robot.action_dim)
+        action[self.base_start_idx : self.base_end_idx] = th.as_tensor(
+            [control_vx, control_vy, control_w]
+        )
 
-            return action, arrived  # Not arrived if we reach this point
-
-        except Exception as e:
-            print(f"[Error] Error in Pure Pursuit control computation: {e}")
-            return th.zeros(self.robot.action_dim), False
+        return action
 
     def _calculate_control_commands(
         self, current_pos: th.Tensor, current_yaw: float
@@ -445,44 +445,6 @@ class PathTrackingController:
 
         return control_vx, control_vy, control_w
 
-    def _check_arrival_condition(self, current_pos: th.Tensor) -> bool:
-        """Check if robot has arrived at the final destination.
-
-        This method checks two conditions:
-        1. All waypoints have been visited (current_target_idx >= len(path))
-        2. Robot is within threshold distance of final target
-
-        Args:
-            current_pos: Current robot position [x, y].
-
-        Returns:
-            True if robot has arrived at final target.
-        """
-        if not self.path:
-            return False
-
-        # Check if all waypoints have been visited
-        if self.current_target_idx >= len(self.path):
-            if not self._arrived_logged:
-                print(f"Path completed: visited all {len(self.path)} waypoints")
-                self._arrived_logged = True
-            return True
-            
-        # Check distance to final target
-        target_pos = self.path[-1]
-        final_distance = th.sqrt(
-            (current_pos[0] - target_pos[0]) ** 2
-            + (current_pos[1] - target_pos[1]) ** 2
-        ).item()
-        
-        # Return True if within threshold distance
-        if final_distance < self.waypoint_threshold:
-            if not self._arrived_logged:
-                print(f"Arrived at final target: distance={final_distance:.3f}m < threshold={self.waypoint_threshold}m")
-                self._arrived_logged = True
-            return True
-            
-        return False
 
     def _log_control_data(
         self,
@@ -714,8 +676,8 @@ class PathTrackingController:
 
     def reset_arrival_state(self) -> None:
         """Reset arrival state for reuse."""
-        self._arrived_logged = False
+        self._arrival_state.reset()
         
     def is_arrived(self) -> bool:
-        """Check if the controller has reached the target and logged arrival."""
-        return self._arrived_logged
+        """Check if the controller has reached the target."""
+        return self._arrival_state.is_arrived()
