@@ -47,6 +47,6 @@ include = ["og_nav*"]
 "og_nav" = ["configs/*.yaml", "assets/*"]
 
 [tool.setuptools_scm]
-version_scheme = "guess-next-dev"
+version_scheme = "no-guess-dev"
 local_scheme = "no-local-version"
-write_to = "og_nav/_version.py" 
+write_to = "og_nav/_version.py"
