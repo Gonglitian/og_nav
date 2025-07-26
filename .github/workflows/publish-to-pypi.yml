@@ -3,7 +3,8 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0, v0.1.0, etc.
+      - 'v*'      # Trigger on version tags like v1.0.0, v0.1.0, etc.
+      - '[0-9]+*' # Trigger on version tags like 1.0.0, 0.1.0a1, etc.
 
 jobs:
   build-and-publish:
