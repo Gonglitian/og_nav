@@ -1,1 +1,27 @@
+# Omnigibson related folders (should not be committed)
 omnigibson/
+omnigibson_grasp/
+
+# Python cache and build files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+og_nav.egg-info/
+
+# Development files
+test.py
+setup.py
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# System files
+.DS_Store
+Thumbs.db

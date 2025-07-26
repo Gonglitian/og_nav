@@ -11,22 +11,23 @@ The package is organized into the following modules:
 """
 
 # Import main navigation interface
-from .core import NavigationInterface
+from og_nav.core import NavigationInterface
 
 # Import other commonly used components
-from .core import NavigationUtils, NavConstants
-from .planning import PathPlanner
-from .control import PathTrackingController, PIDController
-from .mapping import OGMGenerator
+from og_nav.core.config_loader import NavigationConfig
+from og_nav.planning import PathPlanner, is_point_available, find_nearest_available_point
+from og_nav.control import PathTrackingController, PIDController
+from og_nav.mapping import OGMGenerator
 
 __all__ = [
     # Main interface
     "NavigationInterface",
     # Core components
-    "NavigationUtils", 
-    "NavConstants",
+    "NavigationConfig",
     # Planning
     "PathPlanner",
+    "is_point_available",
+    "find_nearest_available_point",
     # Control
     "PathTrackingController",
     "PIDController", 

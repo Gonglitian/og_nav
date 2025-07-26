@@ -1,30 +1,24 @@
-"""Core module for OmniGibson Navigation.
-
-This module provides the core components for robot navigation including:
-- Navigation interface
-- Constants and configuration
-"""
-
-from .constants import (
-    BASE_JOINT_NAMES,
-    DEFAULT_CRUISE_SPEED,
-    DEFAULT_LOOKAHEAD_DISTANCE,
-    DEFAULT_MAX_ANGULAR_VEL,
-    DEFAULT_WAYPOINT_THRESHOLD,
-    NavConstants,
+"""Core navigation module."""
+from og_nav.core.navigation import NavigationInterface
+from og_nav.core.constants import BASE_JOINT_NAMES, TIAGO_BASE_ACTION_START_IDX, TIAGO_BASE_ACTION_END_IDX
+from og_nav.core.config_loader import (
+    NavigationConfig, 
+    OGMConfig, 
+    PlanningConfig, 
+    ControllerConfig, 
+    RobotConfig, 
+    VisualizationConfig
 )
 
-from .navigation import NavigationUtils, NavigationInterface
-
 __all__ = [
-    # Constants
-    "BASE_JOINT_NAMES",
-    "DEFAULT_CRUISE_SPEED",
-    "DEFAULT_LOOKAHEAD_DISTANCE",
-    "DEFAULT_MAX_ANGULAR_VEL",
-    "DEFAULT_WAYPOINT_THRESHOLD",
-    "NavConstants",
-    # Navigation
-    "NavigationUtils",
     "NavigationInterface",
-] 
+    "BASE_JOINT_NAMES", 
+    "TIAGO_BASE_ACTION_START_IDX",
+    "TIAGO_BASE_ACTION_END_IDX",
+    "NavigationConfig",
+    "OGMConfig",
+    "PlanningConfig", 
+    "ControllerConfig",
+    "RobotConfig",
+    "VisualizationConfig"
+]

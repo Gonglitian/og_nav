@@ -5,9 +5,9 @@ This module provides robot control functionality including:
 - Robot joint control utilities
 """
 
-from .controllers import PathTrackingController, PIDController
-from .robot_control import (
-    get_joint_velocity_summary, 
+from og_nav.control.controllers import PathTrackingController, PIDController
+from og_nav.control.control_utils import (
+    get_joint_velocity_summary,
     get_joint_info,
     create_arm_control_action,
     detect_controller_mode,
@@ -17,7 +17,7 @@ from .robot_control import (
     print_joint_info,
     set_arm_jointcontroller,
     get_original_arm_controllers,
-    set_navigation_joint_positions
+    set_navigation_joint_positions,
 )
 
 __all__ = [
@@ -29,11 +29,11 @@ __all__ = [
     "get_joint_info",
     "create_arm_control_action",
     "detect_controller_mode",
-    "create_delta_control_action", 
+    "create_delta_control_action",
     "create_absolute_control_action",
     "move_joint_to_position",
     "print_joint_info",
     "set_arm_jointcontroller",
     "get_original_arm_controllers",
     "set_navigation_joint_positions",
-] 
+]

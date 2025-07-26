@@ -1,0 +1,96 @@
+# =============================================================================
+# Navigation Configuration for OG Nav Package
+# =============================================================================
+
+og_nav:
+  # OGM (Occupancy Grid Map) Configuration
+  ogm:
+    resolution: 0.1                    # Map resolution in meters
+
+  # Path Planning Configuration  
+  planning:
+    # Path planning algorithm parameters will go here
+    
+  # Path Tracking Controller Configuration
+  controller:
+    lookahead_distance: 0.5           # Pure pursuit lookahead distance (m)
+    cruise_speed: 0.5                 # Constant forward speed (m/s)
+    max_angular_vel: 0.2              # Maximum angular velocity (rad/s)
+    waypoint_threshold: 0.2           # Distance threshold for waypoint arrival (m)
+
+  # Robot Configuration
+  robot:
+    # Robot starting position [x, y, z]
+    start_position: [-2, -0.3, 0]
+    
+    # Goal position [x, y, z]  
+    goal_position: [-1, -0.3, 0]
+    
+    # Robot reset pose (all joint positions)
+    reset_pose: [
+      # Base joints (6 DOF: x, y, z, rx, ry, rz)
+      0, 0, 0, 0, 0, 0,
+      # Trunk
+      0,
+      # Arms (7 DOF each, interleaved: left_1, right_1, head_1, left_2, right_2, head_2, left_3...)
+      1.5, 1.5, 0, 1.5, 1.5, 0, 0.0, 0.0, 2.3, 2.3, 0, 0, -1.4, -1.4, 0, 0,
+      # Grippers
+      0.045, 0.045, 0.045, 0.045
+    ]
+    
+    # Navigation arm pose for both arms [7 DOF each]
+    nav_arm_pose: [1.5, 1.5, 0, 2.3, 0, -1.4, 0]
+
+  # Visualization Configuration
+  visualization:
+    enable: true
+    n_waypoints: 50                   # Number of waypoints for visualization
+    
+    # Marker positions and colors
+    hidden_position: [0, 0, 100]       # Position to hide markers
+    
+    # Marker colors [R, G, B, A]
+    start_marker_color: [0, 1, 0, 1]   # Green
+    goal_marker_color: [1, 0, 0, 1]    # Red  
+    waypoint_color: [0, 0, 1, 1]       # Blue
+    
+    # Marker sizes
+    marker_radius: 0.1                 # Start/goal marker radius
+    waypoint_radius: 0.05              # Waypoint marker radius
+    marker_height: 0.1                 # Marker height above ground
+
+# ===================== Compatible Full Scene Configuration =====================
+scene:
+  type: InteractiveTraversableScene
+  scene_model: Pomaria_1_int
+  load_object_categories: [floors, walls]
+  # default_erosion_radius: Config.DEFAULT_EROSION_RADIUS
+
+robots:
+  - type: Tiago
+    position: [-2, -0.3, 0]
+    reset_joint_pos: [
+      # Base joints (6 DOF: x, y, z, rx, ry, rz)
+      0, 0, 0, 0, 0, 0,
+      # Trunk
+      0,
+      # Arms (7 DOF each, interleaved: left_1, right_1, head_1, left_2, right_2, head_2, left_3...)
+      1.5, 1.5, 0, 1.5, 1.5, 0, 0.0, 0.0, 2.3, 2.3, 0, 0, -1.4, -1.4, 0, 0,
+      # Grippers
+      0.045, 0.045, 0.045, 0.045
+    ]
+    controller_config:
+      arm_left:
+        name: JointController
+        motor_type: position
+        use_delta_commands: false
+        use_impedances: true
+        command_input_limits: null
+      arm_right:
+        name: JointController
+        motor_type: position
+        use_delta_commands: false
+        use_impedances: true
+        command_input_limits: null
+
+# Objects will be automatically generated based on visualization.enable setting 

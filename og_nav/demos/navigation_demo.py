@@ -6,92 +6,70 @@ using a clean, minimal setup.
 """
 
 import omnigibson as og
-from omnigibson.macros import gm
-import torch as th
 from omnigibson.robots.tiago import Tiago
+from omnigibson import gm
+from og_nav.core import NavigationInterface
+from og_nav.core.config_loader import NavigationConfig
+import os
 
-from ..core import NavigationInterface
+gm.GUI_VIEWPORT_ONLY = True
 
+# Configurable goal points list - you can modify this to test different routes
+DEMO_GOAL_POINTS = [
+    [-1.0, -0.3],    # Goal 1: Original goal position
+    [0.40, 2.76],     # Goal 2: Upper left area
+]
 
-def create_simple_environment():
-    """Create a simple environment for navigation testing."""
-    config = {
-        "scene": {
-            "type": "Scene",
-            "floor_plane_visible": True,
-        },
-        "objects": [
-            {
-                "type": "LightObject",
-                "name": "brilliant_light",
-                "light_type": "Sphere",
-                "intensity": 50000,
-                "radius": 0.1,
-                "position": [3.0, 3.0, 4.0],
-            },
-        ],
-        "robots": [
-            {
-                "type": "Tiago",
-                "controller_config": {
-                    "arm_left": {
-                        "name": "JointController",
-                        "motor_type": "position", 
-                        "use_delta_commands": False,
-                        "use_impedances": True,
-                        "command_input_limits": None,
-                    },
-                    "arm_right": {
-                        "name": "JointController", 
-                        "motor_type": "position",
-                        "use_delta_commands": False,
-                        "use_impedances": True,
-                        "command_input_limits": None,
-                    }
-                },
-            },
-        ],
-    }
-    return config
-
-
-def main() -> None:
-    """Main execution function for simple navigation demo."""
-    print("Starting Simple Navigation Demo...")
+def main():
+    """Main demo function."""
+    # Use unified configuration manager to process config file
+    config_path = os.path.join(os.path.dirname(__file__), "..", "configs", "navigation_config.yaml")
+    nav_config = NavigationConfig(config_path=config_path)
     
-    # Create environment
-    config = create_simple_environment()
-    env = og.Environment(config)
+    print("Creating environment...")
     
-    # Get robot
-    robot: Tiago = env.robots[0]
-    robot.keep_still()
+    # Create environment using processed configuration
+    omnigibson_config = nav_config.get_omnigibson_config()
+    if omnigibson_config is None:
+        raise ValueError("No OmniGibson configuration found")
+    env = og.Environment(configs=omnigibson_config)
     
-    # Enable camera control
-    camera = og.sim.enable_viewer_camera_teleoperation()
-    camera.cam.set_position_orientation(
-        position=[1.3629, -2.1080, 1.3431], 
-        orientation=[0.5479, 0.1376, 0.2009, 0.8003]
-    )
+    robot = env.robots[0]
     
-    # Initialize navigation interface
-    navigator = NavigationInterface(env, robot)
-    navigator.setup()
+    # Create navigation interface with og_nav configuration
+    navigator = NavigationInterface(env, robot, nav_config.og_nav_config)
     
-    # Set a simple goal
-    navigator.set_goal((2.0, 2.0))
+    print("Environment created. Starting navigation demo...")
+    print(f"Will visit {len(DEMO_GOAL_POINTS)} goal points sequentially")
     
-    # Main control loop
-    print("Starting navigation... Press Ctrl+C to stop")
-    try:
-        while True:
-            action = navigator.update()
-            env.step(action)
-    except KeyboardInterrupt:
-        print("Navigation demo stopped by user")
-    finally:
-        env.close()
-
+    # Visit goal points sequentially
+    current_goal_idx = 0
+    
+    # Set the first goal point
+    if DEMO_GOAL_POINTS:
+        goal = DEMO_GOAL_POINTS[current_goal_idx]
+        navigator.set_goal((goal[0], goal[1]))
+        print(f"Goal {current_goal_idx + 1}/{len(DEMO_GOAL_POINTS)}: Moving to [{goal[0]:.2f}, {goal[1]:.2f}]")
+    
+    # Main loop
+    while True:
+        # Update environment and navigation
+        navigator.update()
+        env.step([])
+        
+        # Check if current goal is reached
+        if navigator.controller.is_arrived():
+            print(f"✓ Reached goal {current_goal_idx + 1}/{len(DEMO_GOAL_POINTS)}")
+            
+            # Move to next goal point
+            current_goal_idx += 1
+            if current_goal_idx < len(DEMO_GOAL_POINTS):
+                goal = DEMO_GOAL_POINTS[current_goal_idx]
+                navigator.set_goal((goal[0], goal[1]))
+                print(f"Goal {current_goal_idx + 1}/{len(DEMO_GOAL_POINTS)}: Moving to [{goal[0]:.2f}, {goal[1]:.2f}]")
+            else:
+                print("🎉 All goal points visited! Demo completed.")
+                break
 
 if __name__ == "__main__":
-    main() 
+    main()

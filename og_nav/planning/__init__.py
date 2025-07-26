@@ -1,12 +1,13 @@
 """Path planning module for OmniGibson Navigation.
 
-This module provides path planning functionality including:
-- Path planning with visualization
-- Waypoint generation
+This module provides path planning algorithms and utilities.
 """
 
-from .path_planning import PathPlanner
+from og_nav.planning.path_planning import PathPlanner
+from og_nav.planning.utils import is_point_available, find_nearest_available_point
 
 __all__ = [
     "PathPlanner",
-] 
+    "is_point_available", 
+    "find_nearest_available_point",
+]

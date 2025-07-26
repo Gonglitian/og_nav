@@ -12,12 +12,7 @@ import omnigibson as og
 import omnigibson.utils.transform_utils as T
 from omnigibson.robots.tiago import Tiago
 
-from ..core.constants import (
-    DEFAULT_CRUISE_SPEED,
-    DEFAULT_LOOKAHEAD_DISTANCE,
-    DEFAULT_MAX_ANGULAR_VEL,
-    DEFAULT_WAYPOINT_THRESHOLD,
-)
+from og_nav.core.constants import TIAGO_BASE_ACTION_START_IDX, TIAGO_BASE_ACTION_END_IDX
 
 # Configure matplotlib for non-interactive backend
 matplotlib.use("Agg")
@@ -25,10 +20,10 @@ matplotlib.use("Agg")
 
 class PIDController:
     """Generic PID controller implementation.
-    
+
     This controller implements proportional-integral-derivative control
     with optional output limits and debug information tracking.
-    
+
     Attributes:
         kp (float): Proportional gain coefficient.
         ki (float): Integral gain coefficient.
@@ -37,7 +32,7 @@ class PIDController:
         integral (float): Accumulated integral term.
         last_error (float): Previous error value for derivative calculation.
     """
-    
+
     def __init__(
         self,
         kp: float,
@@ -46,7 +41,7 @@ class PIDController:
         output_limits: Optional[Tuple[float, float]] = None,
     ) -> None:
         """Initialize PID controller.
-        
+
         Args:
             kp: Proportional gain
             ki: Integral gain
@@ -57,351 +52,438 @@ class PIDController:
         self.ki = ki
         self.kd = kd
         self.output_limits = output_limits
-        
+
         # Control state
         self.integral = 0.0
         self.last_error = 0.0
         self.last_time = None
-        
+
         # Debug information
         self.last_p = 0.0
         self.last_i = 0.0
         self.last_d = 0.0
-        
+
         print(f"PID Controller initialized: Kp={kp}, Ki={ki}, Kd={kd}")
-    
+
     def update(self, error: float, dt: float) -> float:
         """Update PID controller and compute control output.
-        
+
         Args:
             error: Current error value
             dt: Time step
-            
+
         Returns:
             Control output value
         """
         if dt <= 0:
             print("[Warning] Invalid time step: {dt}, using minimal value")
             dt = 1e-6
-        
+
         # Proportional term
         p_term = self.kp * error
-        
+
         # Integral term
         self.integral += error * dt
         i_term = self.ki * self.integral
-        
+
         # Derivative term
         if self.last_error is not None:
             derivative = (error - self.last_error) / dt
         else:
             derivative = 0.0
         d_term = self.kd * derivative
-        
-        # Calculate output
-        output = p_term + i_term + d_term
-        
-        # Apply output limits if specified
-        if self.output_limits is not None:
-            min_limit, max_limit = self.output_limits
-            output = max(min_limit, min(max_limit, output))
-        
-        # Store values for next iteration
-        self.last_error = error
+
+        # Store components for debugging
         self.last_p = p_term
         self.last_i = i_term
         self.last_d = d_term
-        
+
+        # Calculate output
+        output = p_term + i_term + d_term
+
+        # Apply output limits
+        if self.output_limits is not None:
+            output = max(self.output_limits[0], min(self.output_limits[1], output))
+
+        self.last_error = error
         return output
-    
+
     def get_last_components(self) -> Tuple[float, float, float]:
-        """Get the last P, I, D component values.
-        
+        """Get the last computed P, I, D components.
+
         Returns:
-            Tuple of (P, I, D) components
+            Tuple of (P, I, D) component values
         """
-        return (self.last_p, self.last_i, self.last_d)
-    
+        return self.last_p, self.last_i, self.last_d
+
     def reset(self) -> None:
-        """Reset the controller state."""
+        """Reset PID controller state."""
         self.integral = 0.0
         self.last_error = 0.0
-        self.last_time = None
         self.last_p = 0.0
         self.last_i = 0.0
         self.last_d = 0.0
+        print("PID Controller reset")
 
 
 class PathTrackingController:
-    """Path tracking controller using Pure Pursuit algorithm with PID heading control.
-    
-    This controller implements a Pure Pursuit path following algorithm combined
-    with PID control for heading adjustment. It tracks a sequence of waypoints
-    and generates appropriate velocity commands for the robot.
+    """Pure Pursuit path tracking controller.
+
+    This controller implements the Pure Pursuit algorithm which tracks a path
+    by continuously "chasing" a lookahead point on the path.
+
+    Attributes:
+        robot (Tiago): The robot instance to control.
+        lookahead_distance (float): Distance to lookahead point on path.
+        cruise_speed (float): Constant forward speed.
+        max_angular_vel (float): Maximum angular velocity.
+        waypoint_threshold (float): Distance threshold for waypoint arrival.
+        path (List[Tuple[float, float]]): Current path waypoints.
+        current_target_idx (int): Index of current target waypoint.
     """
     
+    @staticmethod
+    def get_default_cfg() -> dict:
+        """Get default configuration for PathTrackingController."""
+        return {
+            'lookahead_distance': 0.5,
+            'cruise_speed': 0.5,
+            'max_angular_vel': 0.2,
+            'waypoint_threshold': 0.2
+        }
+
     def __init__(
         self,
         robot: Tiago,
-        lookahead_distance: float = DEFAULT_LOOKAHEAD_DISTANCE,
-        cruise_speed: float = DEFAULT_CRUISE_SPEED,
-        max_angular_vel: float = DEFAULT_MAX_ANGULAR_VEL,
-        waypoint_threshold: float = DEFAULT_WAYPOINT_THRESHOLD,
+        lookahead_distance: Optional[float] = None,
+        cruise_speed: Optional[float] = None,
+        max_angular_vel: Optional[float] = None,
+        waypoint_threshold: Optional[float] = None,
         dt: Optional[float] = None,
+        config: Optional[dict] = None,
     ) -> None:
-        """Initialize path tracking controller.
-        
+        """Initialize Pure Pursuit controller.
+
+        Priority order for parameters:
+        1. Constructor arguments (highest priority)
+        2. config dict values
+        3. Default values (lowest priority)
+
         Args:
             robot: Tiago robot instance
-            lookahead_distance: Lookahead distance for Pure Pursuit
-            cruise_speed: Desired forward speed
+            lookahead_distance: Distance to lookahead point on path
+            cruise_speed: Constant forward speed
             max_angular_vel: Maximum angular velocity
-            waypoint_threshold: Distance threshold to consider waypoint reached
-            dt: Control loop time step (None to use robot control frequency)
+            waypoint_threshold: Distance threshold for waypoint arrival
+            dt: Control time step
+            config: Controller configuration dict
         """
         self.robot = robot
-        self.lookahead_distance = lookahead_distance
-        self.cruise_speed = cruise_speed
-        self.max_angular_vel = max_angular_vel
-        self.waypoint_threshold = waypoint_threshold
         
-        # Control timing
-        self.dt = dt if dt is not None else (1.0 / robot.control_freq)
+        # Merge config with defaults following priority order
+        default_config = self.get_default_cfg()
+        merged_config = default_config.copy()
+        if config is not None:
+            merged_config.update(config)
         
-        # Waypoint tracking
-        self.waypoints: List[th.Tensor] = []
-        self.current_waypoint_idx = 0
-        self.target_waypoint: Optional[Tuple[float, float]] = None
+        # Apply constructor arguments (highest priority)
+        self.lookahead_distance = lookahead_distance if lookahead_distance is not None else merged_config['lookahead_distance']
+        self.cruise_speed = cruise_speed if cruise_speed is not None else merged_config['cruise_speed']
+        self.max_angular_vel = max_angular_vel if max_angular_vel is not None else merged_config['max_angular_vel']
+        self.waypoint_threshold = waypoint_threshold if waypoint_threshold is not None else merged_config['waypoint_threshold']
         
-        # Control components
-        self.heading_pid = PIDController(
-            kp=2.0, ki=0.0, kd=0.0, output_limits=(-max_angular_vel, max_angular_vel)
+        self.dt = dt if dt is not None else og.sim.get_sim_step_dt()
+        
+        # Store final config for reference
+        self.config = {
+            'lookahead_distance': self.lookahead_distance,
+            'cruise_speed': self.cruise_speed,
+            'max_angular_vel': self.max_angular_vel,
+            'waypoint_threshold': self.waypoint_threshold
+        }
+        
+        # Path and tracking state
+        self.path: List[Tuple[float, float]] = []
+        self.current_target_idx = 0
+        self._arrived_logged = False  # Flag to track if arrival message has been logged
+        
+        # Robot base action indices
+        self.base_start_idx, self.base_end_idx = (
+            TIAGO_BASE_ACTION_START_IDX,
+            TIAGO_BASE_ACTION_END_IDX,
         )
-        
-        # Debug and logging
-        self.control_log: List[Dict] = []
-        self.debug_mode = False
-        
-        # Initialize base action indices
-        self.base_action_indices = self._get_base_action_indices()
-        
-        print(f"PathTrackingController initialized with dt={self.dt:.3f}s")
-    
-    def _get_base_action_indices(self) -> List[int]:
-        """Get indices for base joints in the action space.
-        
-        Returns:
-            List of base joint indices
-        """
-        # Get base joint names from robot
-        base_joint_names = [
-            "base_footprint_x_joint",
-            "base_footprint_y_joint", 
-            "base_footprint_rz_joint"
-        ]
-        
-        # Map to dof indices
-        joint_names_list = list(self.robot.joints.keys())
-        try:
-            base_dof_indices = [
-                joint_names_list.index(name) for name in base_joint_names
+
+        # Data logging for analysis and visualization
+        self.data_logger: Dict[str, List] = {
+            key: []
+            for key in [
+                "time",
+                "x",
+                "y",
+                "theta",
+                "target_x",
+                "target_y",
+                "lookahead_x",
+                "lookahead_y",
+                "error_x",
+                "error_y",
+                "control_vx",
+                "control_vy",
+                "control_w",
+                "curvature",
             ]
-            return base_dof_indices
-        except ValueError as e:
-            print(f"[Warning] Could not find base joints: {e}")
-            # Fallback to default indices
-            return [0, 1, 2]
-    
-    def set_path(self, waypoints: Union[List[Tuple[float, float]], List[th.Tensor]]) -> None:
-        """Set the path to follow.
-        
+        }
+
+        print(
+            f"Pure Pursuit Controller initialized: lookahead={lookahead_distance}m, speed={cruise_speed}m/s"
+        )
+
+    def set_path(
+        self, waypoints: Union[List[Tuple[float, float]], List[th.Tensor]]
+    ) -> None:
+        """Set new path for tracking.
+
         Args:
-            waypoints: List of (x, y) waypoints or tensor waypoints
+            waypoints: List of (x, y) waypoints
         """
-        # Convert waypoints to tensor format
-        self.waypoints = []
-        for waypoint in waypoints:
-            if isinstance(waypoint, tuple):
-                self.waypoints.append(th.tensor([waypoint[0], waypoint[1]]))
-            else:
-                self.waypoints.append(waypoint)
-        
-        self.current_waypoint_idx = 0
-        if self.waypoints:
-            self.target_waypoint = (
-                self.waypoints[0][0].item(),
-                self.waypoints[0][1].item(),
-            )
-        else:
-            self.target_waypoint = None
-            
-        # Reset PID controller
-        self.heading_pid.reset()
-        
-        print(f"Path set with {len(self.waypoints)} waypoints")
-    
+        # if waypoints is a list of tensors, convert to list of tuples
+        if isinstance(waypoints[0], th.Tensor):
+            waypoints = [tuple(waypoint.tolist()) for waypoint in waypoints]
+        self.path = waypoints.copy()
+        self.current_target_idx = 0
+        self._arrived_logged = False  # Reset arrival logging flag for new path
+
+        # Clear previous logging data
+        for key in self.data_logger:
+            self.data_logger[key].clear()
+
+        print(f"New path set with {len(waypoints)} waypoints")
+
     def find_lookahead_point(self, current_pos: th.Tensor) -> Tuple[float, float]:
-        """Find the lookahead point on the path.
-        
+        """Find lookahead point on the path.
+
         Args:
-            current_pos: Current robot position (x, y)
-            
+            current_pos: Current robot position [x, y].
+
         Returns:
-            Lookahead point coordinates (x, y)
+            Lookahead point (x, y) coordinates.
         """
-        if not self.waypoints:
+        if not self.path:
             return (current_pos[0].item(), current_pos[1].item())
-        
-        # Find the first waypoint that is at least lookahead_distance away
-        for waypoint in self.waypoints[self.current_waypoint_idx:]:
-            distance = th.norm(waypoint - current_pos[:2])
-            if distance >= self.lookahead_distance:
-                return (waypoint[0].item(), waypoint[1].item())
-        
-        # If no waypoint is far enough, use the last waypoint
-        last_waypoint = self.waypoints[-1]
-        return (last_waypoint[0].item(), last_waypoint[1].item())
-    
-    def update_target_waypoint(self, current_pos: th.Tensor) -> None:
-        """Update the target waypoint based on current position.
-        
-        Args:
-            current_pos: Current robot position (x, y)
-        """
-        if not self.waypoints:
-            return
-            
-        # Check if we've reached the current target waypoint
-        if self.target_waypoint is not None:
-            target_tensor = th.tensor([self.target_waypoint[0], self.target_waypoint[1]])
-            distance = th.norm(target_tensor - current_pos[:2])
-            
-            if distance < self.waypoint_threshold:
-                # Move to next waypoint
-                self.current_waypoint_idx += 1
-                if self.current_waypoint_idx < len(self.waypoints):
-                    next_waypoint = self.waypoints[self.current_waypoint_idx]
-                    self.target_waypoint = (
-                        next_waypoint[0].item(),
-                        next_waypoint[1].item(),
-                    )
-                    print(f"Reached waypoint {self.current_waypoint_idx-1}, moving to {self.current_waypoint_idx}")
-                else:
-                    # Reached end of path
-                    self.target_waypoint = None
-    
-    def control(self, return_action: bool = True) -> Union[Tuple[th.Tensor, bool], bool]:
-        """Compute control commands to follow the path.
-        
-        Args:
-            return_action: If True, return action tensor and arrived flag. 
-                          If False, only return arrived flag.
-            
-        Returns:
-            If return_action is True: (action_tensor, arrived)
-            If return_action is False: arrived
-        """
-        # Get current robot state
-        current_pos, current_orn = self.robot.get_position_orientation()
-        current_yaw = T.euler_from_quat(current_orn)[2]  # Extract yaw from quaternion
-        
-        # Update target waypoint
-        self.update_target_waypoint(current_pos)
-        
-        # Check if we've arrived at the final destination
-        arrived = self.target_waypoint is None
-        
-        if arrived:
-            if return_action:
-                # Create zero action
-                action = th.zeros(self.robot.action_dim)
-                return action, True
-            else:
-                return True
-        
-        # Find lookahead point
-        lookahead_x, lookahead_y = self.find_lookahead_point(current_pos)
-        
-        # Calculate errors
-        error_x = lookahead_x - current_pos[0].item()
-        error_y = lookahead_y - current_pos[1].item()
-        
-        # Calculate desired heading
-        desired_heading = np.arctan2(error_y, error_x)
-        
-        # Calculate heading error (normalize to [-π, π])
-        heading_error = desired_heading - current_yaw
-        while heading_error > np.pi:
-            heading_error -= 2 * np.pi
-        while heading_error < -np.pi:
-            heading_error += 2 * np.pi
-        
-        # Use PID controller for angular velocity
-        angular_vel = self.heading_pid.update(heading_error, self.dt)
-        
-        # Calculate linear velocity (reduce when approaching waypoints)
-        distance_to_target = np.sqrt(error_x**2 + error_y**2)
-        linear_vel = self.cruise_speed
-        if distance_to_target < 1.0:  # Slow down when close
-            linear_vel *= max(0.1, distance_to_target)
-        
-        # Convert to robot action space
-        if return_action:
-            # Dynamically get current action dimension
-            current_action_dim = self.robot.action_dim
-            action = th.zeros(current_action_dim)
-            
-            # Set base velocities
-            # Get current base action indices
-            current_base_indices = self._get_base_action_indices()
-            
-            if len(current_base_indices) >= 3:
-                action[current_base_indices[0]] = linear_vel  # x velocity
-                action[current_base_indices[1]] = 0.0         # y velocity (0 for differential drive)
-                action[current_base_indices[2]] = angular_vel # angular velocity
-            
-            # Log control data if in debug mode
-            if self.debug_mode:
-                self._log_control_data(
-                    current_pos, current_yaw, lookahead_x, lookahead_y,
-                    error_x, error_y, linear_vel, 0.0, angular_vel, 0.0
+
+        robot_pos = np.array([current_pos[0].item(), current_pos[1].item()])
+
+        # Search for the lookahead point starting from current target
+        for i in range(self.current_target_idx, len(self.path) - 1):
+            # Get path segment
+            segment_start = np.array(self.path[i])
+            segment_end = np.array(self.path[i + 1])
+            segment_vec = segment_end - segment_start
+
+            # Project robot position onto path segment
+            segment_length_sq = np.dot(segment_vec, segment_vec)
+            if segment_length_sq > 1e-12:  # Avoid division by zero
+                robot_to_start = robot_pos - segment_start
+                t = np.clip(
+                    np.dot(robot_to_start, segment_vec) / segment_length_sq, 0, 1
                 )
+                closest_point = segment_start + t * segment_vec
+
+                # Check if we've found a point at lookahead distance
+                dist_to_closest = np.linalg.norm(closest_point - robot_pos)
+
+                # If this segment contains the lookahead point
+                if dist_to_closest <= self.lookahead_distance:
+                    remaining_dist = self.lookahead_distance - dist_to_closest
+
+                    # Search forward from closest point
+                    for j in range(i, len(self.path) - 1):
+                        seg_start = np.array(self.path[j])
+                        seg_end = np.array(self.path[j + 1])
+                        seg_vec = seg_end - seg_start
+                        seg_length = np.linalg.norm(seg_vec)
+
+                        if seg_length > 1e-6:
+                            if remaining_dist <= seg_length:
+                                # Found lookahead point on this segment
+                                direction = seg_vec / seg_length
+                                lookahead_point = seg_start + remaining_dist * direction
+                                return tuple(lookahead_point)
+                            remaining_dist -= seg_length
+
+        # Fallback: return last waypoint
+        return self.path[-1]
+
+    def update_target_waypoint(self, current_pos: th.Tensor) -> None:
+        """Update current target waypoint index based on robot position.
+
+        Args:
+            current_pos: Current robot position [x, y]
+        """
+        if not self.path or self.current_target_idx >= len(self.path):
+            return
+
+        robot_x, robot_y = current_pos[0].item(), current_pos[1].item()
+
+        # Check if we're close enough to current target to advance
+        while self.current_target_idx < len(self.path):
+            target_x, target_y = self.path[self.current_target_idx]
+            distance_to_target = np.sqrt(
+                (robot_x - target_x) ** 2 + (robot_y - target_y) ** 2
+            )
+
+            if distance_to_target < self.waypoint_threshold:
+                self.current_target_idx += 1
+                print(
+                    f"Advanced to waypoint {self.current_target_idx}/{len(self.path)} {self.path[self.current_target_idx]}"
+                )
+            else:
+                break
+
+    def control(self) -> Tuple[th.Tensor, bool]:
+        """Compute control commands using Pure Pursuit algorithm.
+
+        Returns:
+            Tuple of (action, arrived_flag):
+            - action: Robot action tensor with base control commands
+            - arrived_flag: True if robot has reached final target
+        """
+        if not self.path:
+            print("[Warning] No path set for Pure Pursuit controller")
+            return th.zeros(self.robot.action_dim), False
+
+        try:
+            # Get current robot state
+            current_pos, current_orientation = self.robot.get_position_orientation()
+            current_yaw = T.quat2euler(current_orientation)[2]
+
+            # Update target waypoint based on current position
+            self.update_target_waypoint(current_pos)
+
+            # Check arrival condition (unified logic)
+            arrived = self._check_arrival_condition(current_pos)
             
-            return action, False
-        else:
-            return False
-    
+            # If arrived, return zero action
+            if arrived:
+                return th.zeros(self.robot.action_dim), True
+
+            # Calculate control commands
+            control_vx, control_vy, control_w = self._calculate_control_commands(
+                current_pos, current_yaw
+            )
+
+            # Create action tensor
+            action = th.zeros(self.robot.action_dim)
+            action[self.base_start_idx : self.base_end_idx] = th.as_tensor(
+                [control_vx, control_vy, control_w]
+            )
+
+            return action, arrived  # Not arrived if we reach this point
+
+        except Exception as e:
+            print(f"[Error] Error in Pure Pursuit control computation: {e}")
+            return th.zeros(self.robot.action_dim), False
+
     def _calculate_control_commands(
         self, current_pos: th.Tensor, current_yaw: float
     ) -> Tuple[float, float, float]:
-        """Calculate control commands (for future extension).
-        
+        """Calculate Pure Pursuit control commands.
+
         Args:
-            current_pos: Current robot position
-            current_yaw: Current robot yaw
-            
+            current_pos: Current robot position [x, y].
+            current_yaw: Current robot yaw angle in radians.
+
         Returns:
-            Tuple of (vx, vy, w) control commands
+            Tuple of (vx, vy, angular_velocity) control commands.
         """
-        # This is a placeholder for more complex control algorithms
-        return (0.0, 0.0, 0.0)
-    
+        # Find lookahead point
+        lookahead_x, lookahead_y = self.find_lookahead_point(current_pos)
+
+        # Calculate relative position to lookahead point in world frame
+        dx_world = lookahead_x - current_pos[0].item()
+        dy_world = lookahead_y - current_pos[1].item()
+
+        # Transform to robot body frame
+        cos_yaw = np.cos(current_yaw)
+        sin_yaw = np.sin(current_yaw)
+
+        x_local = cos_yaw * dx_world + sin_yaw * dy_world
+        y_local = -sin_yaw * dx_world + cos_yaw * dy_world
+
+        # Pure Pursuit algorithm: calculate curvature
+        L_squared = self.lookahead_distance**2
+        curvature = 2 * y_local / L_squared if L_squared > 1e-6 else 0.0
+
+        # Calculate control outputs
+        control_vx = self.cruise_speed
+        control_vy = 0.0  # Pure pursuit typically doesn't use lateral velocity
+        control_w = self.cruise_speed * curvature
+
+        # Apply angular velocity limits
+        control_w = max(-self.max_angular_vel, min(self.max_angular_vel, control_w))
+
+        # Log data for analysis
+        self._log_control_data(
+            current_pos,
+            current_yaw,
+            lookahead_x,
+            lookahead_y,
+            dx_world,
+            dy_world,
+            control_vx,
+            control_vy,
+            control_w,
+            curvature,
+        )
+
+        # Periodic debug output
+        # if len(self.data_logger["time"]) % 50 == 0:
+        #     self._log_debug_info(
+        #         current_pos, lookahead_x, lookahead_y, dx_world, dy_world,
+        #         current_yaw, control_vx, control_vy, control_w, curvature
+        #     )
+
+        return control_vx, control_vy, control_w
+
     def _check_arrival_condition(self, current_pos: th.Tensor) -> bool:
-        """Check if robot has arrived at final destination.
-        
+        """Check if robot has arrived at the final destination.
+
+        This method checks two conditions:
+        1. All waypoints have been visited (current_target_idx >= len(path))
+        2. Robot is within threshold distance of final target
+
         Args:
-            current_pos: Current robot position
-            
+            current_pos: Current robot position [x, y].
+
         Returns:
-            True if arrived, False otherwise
+            True if robot has arrived at final target.
         """
-        if not self.waypoints:
+        if not self.path:
+            return False
+
+        # Check if all waypoints have been visited
+        if self.current_target_idx >= len(self.path):
+            if not self._arrived_logged:
+                print(f"Path completed: visited all {len(self.path)} waypoints")
+                self._arrived_logged = True
             return True
             
-        final_waypoint = self.waypoints[-1]
-        distance = th.norm(final_waypoint - current_pos[:2])
-        return distance < self.waypoint_threshold
-    
+        # Check distance to final target
+        target_pos = self.path[-1]
+        final_distance = th.sqrt(
+            (current_pos[0] - target_pos[0]) ** 2
+            + (current_pos[1] - target_pos[1]) ** 2
+        ).item()
+        
+        # Return True if within threshold distance
+        if final_distance < self.waypoint_threshold:
+            if not self._arrived_logged:
+                print(f"Arrived at final target: distance={final_distance:.3f}m < threshold={self.waypoint_threshold}m")
+                self._arrived_logged = True
+            return True
+            
+        return False
+
     def _log_control_data(
         self,
         current_pos: th.Tensor,
@@ -415,31 +497,24 @@ class PathTrackingController:
         control_w: float,
         curvature: float,
     ) -> None:
-        """Log control data for debugging and analysis.
-        
-        Args:
-            current_pos: Current robot position
-            current_yaw: Current robot yaw
-            lookahead_x: Lookahead point x coordinate
-            lookahead_y: Lookahead point y coordinate
-            error_x: X position error
-            error_y: Y position error
-            control_vx: X velocity command
-            control_vy: Y velocity command
-            control_w: Angular velocity command
-            curvature: Path curvature
-        """
-        log_entry = {
-            "timestamp": datetime.now().isoformat(),
-            "position": current_pos.tolist(),
-            "yaw": current_yaw,
-            "lookahead": [lookahead_x, lookahead_y],
-            "error": [error_x, error_y],
-            "control": [control_vx, control_vy, control_w],
-            "curvature": curvature,
-        }
-        self.control_log.append(log_entry)
-    
+        """Log control data for analysis and visualization."""
+        self.data_logger["time"].append(len(self.data_logger["time"]) * self.dt)
+        self.data_logger["x"].append(current_pos[0].item())
+        self.data_logger["y"].append(current_pos[1].item())
+        self.data_logger["theta"].append(current_yaw)
+        self.data_logger["lookahead_x"].append(lookahead_x)
+        self.data_logger["lookahead_y"].append(lookahead_y)
+        self.data_logger["error_x"].append(error_x)
+        self.data_logger["error_y"].append(error_y)
+        self.data_logger["control_vx"].append(control_vx)
+        self.data_logger["control_vy"].append(control_vy)
+        self.data_logger["control_w"].append(control_w)
+        self.data_logger["curvature"].append(curvature)
+
+        # For compatibility, add target position (using lookahead point)
+        self.data_logger["target_x"].append(lookahead_x)
+        self.data_logger["target_y"].append(lookahead_y)
+
     def _log_debug_info(
         self,
         current_pos: th.Tensor,
@@ -453,202 +528,194 @@ class PathTrackingController:
         control_w: float,
         curvature: float,
     ) -> None:
-        """Log debug information.
-        
-        Args:
-            current_pos: Current robot position
-            lookahead_x: Lookahead point x coordinate
-            lookahead_y: Lookahead point y coordinate
-            error_x: X position error
-            error_y: Y position error
-            current_yaw: Current robot yaw
-            control_vx: X velocity command
-            control_vy: Y velocity command
-            control_w: Angular velocity command
-            curvature: Path curvature
-        """
-        if self.debug_mode:
-            print(f"[DEBUG] Pos: ({current_pos[0]:.2f}, {current_pos[1]:.2f}), "
-                  f"Yaw: {current_yaw:.2f}, "
-                  f"Lookahead: ({lookahead_x:.2f}, {lookahead_y:.2f}), "
-                  f"Error: ({error_x:.2f}, {error_y:.2f}), "
-                  f"Control: (vx={control_vx:.2f}, vy={control_vy:.2f}, w={control_w:.2f})")
-    
+        """Log detailed debug information."""
+        step_count = len(self.data_logger["time"])
+        print(f"Pure Pursuit Control Details (Step {step_count}):")
+        print(f"  Position: [{current_pos[0]:.4f}, {current_pos[1]:.4f}]")
+        print(f"  Lookahead Point: [{lookahead_x:.4f}, {lookahead_y:.4f}]")
+        print(f"  Error: x={error_x:.4f}, y={error_y:.4f}")
+        print(f"  Current orientation: {np.degrees(current_yaw):.2f}°")
+        print(f"  Control: vx={control_vx:.4f}, vy={control_vy:.4f}, w={control_w:.4f}")
+        print(f"  Curvature: {curvature:.4f}")
+        print(f"  Target waypoint: {self.current_target_idx}/{len(self.path)}")
+
     def plot_results(self, save_path: Optional[str] = None) -> None:
-        """Plot control results for analysis.
-        
+        """Generate and save visualization plots of Pure Pursuit tracking results.
+
         Args:
-            save_path: Path to save plot, None to display
+            save_path: Path to save the plot. If None, generates automatic filename.
         """
-        if not self.control_log:
-            print("[Warning] No control data to plot")
+        if not self.data_logger["time"]:
+            print("[Warning] No tracking data available for plotting")
             return
-            
-        self._create_tracking_plots(save_path)
-    
+
+        if save_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            save_path = f"pure_pursuit_results_{timestamp}.png"
+
+        try:
+            self._create_tracking_plots(save_path)
+            print(f"Pure Pursuit tracking results saved to: {save_path}")
+        except Exception as e:
+            print(f"[Error] Error creating tracking plots: {e}")
+
     def _create_tracking_plots(self, save_path: str) -> None:
-        """Create tracking performance plots.
-        
-        Args:
-            save_path: Path to save plots
-        """
-        # Extract data
-        timestamps = [entry["timestamp"] for entry in self.control_log]
-        positions = [entry["position"] for entry in self.control_log]
-        yaws = [entry["yaw"] for entry in self.control_log]
-        controls = [entry["control"] for entry in self.control_log]
-        
-        # Create plots
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-        fig.suptitle("Path Tracking Control Results")
-        
-        # Plot trajectory
+        """Create comprehensive Pure Pursuit tracking visualization plots."""
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig.suptitle("Pure Pursuit Path Tracking Results", fontsize=16)
+
+        # Trajectory plot
         self._plot_trajectory(axes[0, 0])
-        
-        # Plot position errors
+
+        # Position errors
         self._plot_position_errors(axes[0, 1])
-        
-        # Plot control commands
+
+        # Curvature plot
+        self._plot_curvature(axes[0, 2])
+
+        # Linear control outputs
         self._plot_linear_control(axes[1, 0])
+
+        # Angular control output
         self._plot_angular_control(axes[1, 1])
-        
+
+        # Lookahead points
+        self._plot_lookahead_points(axes[1, 2])
+
         plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Plot saved to {save_path}")
-        else:
-            plt.show()
-        
-        plt.close(fig)
-    
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close()
+
     def _plot_trajectory(self, ax) -> None:
-        """Plot robot trajectory.
-        
-        Args:
-            ax: Matplotlib axis
-        """
-        if not self.control_log:
-            return
-            
-        positions = [entry["position"] for entry in self.control_log]
-        x_coords = [pos[0] for pos in positions]
-        y_coords = [pos[1] for pos in positions]
-        
-        ax.plot(x_coords, y_coords, 'b-', linewidth=2, label='Trajectory')
-        ax.scatter(x_coords[0], y_coords[0], color='green', s=100, label='Start')
-        ax.scatter(x_coords[-1], y_coords[-1], color='red', s=100, label='End')
-        
-        # Plot waypoints if available
-        if self.waypoints:
-            wp_x = [wp[0].item() for wp in self.waypoints]
-            wp_y = [wp[1].item() for wp in self.waypoints]
-            ax.scatter(wp_x, wp_y, color='orange', s=50, label='Waypoints')
-        
-        ax.set_xlabel('X Position (m)')
-        ax.set_ylabel('Y Position (m)')
-        ax.set_title('Robot Trajectory')
+        """Plot robot trajectory and path."""
+        ax.plot(
+            self.data_logger["x"],
+            self.data_logger["y"],
+            "b-",
+            label="Robot Path",
+            linewidth=2,
+        )
+
+        # Plot original path waypoints
+        if self.path:
+            path_x = [p[0] for p in self.path]
+            path_y = [p[1] for p in self.path]
+            ax.plot(
+                path_x, path_y, "r--", label="Reference Path", linewidth=2, alpha=0.7
+            )
+            ax.scatter(path_x, path_y, color="red", s=30, alpha=0.7)
+
+        ax.scatter(
+            self.data_logger["x"][0],
+            self.data_logger["y"][0],
+            color="green",
+            s=100,
+            label="Start",
+        )
+        ax.scatter(
+            self.data_logger["x"][-1],
+            self.data_logger["y"][-1],
+            color="red",
+            s=100,
+            label="End",
+        )
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_title("Robot Trajectory vs Reference Path")
         ax.legend()
         ax.grid(True)
-    
+        ax.axis("equal")
+
     def _plot_position_errors(self, ax) -> None:
-        """Plot position errors.
-        
-        Args:
-            ax: Matplotlib axis
-        """
-        if not self.control_log:
-            return
-            
-        errors = [entry["error"] for entry in self.control_log]
-        error_x = [err[0] for err in errors]
-        error_y = [err[1] for err in errors]
-        
-        time_points = range(len(errors))
-        ax.plot(time_points, error_x, 'r-', label='X Error')
-        ax.plot(time_points, error_y, 'b-', label='Y Error')
-        
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Position Error (m)')
-        ax.set_title('Position Tracking Errors')
+        """Plot position tracking errors."""
+        ax.plot(
+            self.data_logger["time"], self.data_logger["error_x"], "r-", label="Error X"
+        )
+        ax.plot(
+            self.data_logger["time"], self.data_logger["error_y"], "g-", label="Error Y"
+        )
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Position Error (m)")
+        ax.set_title("Position Tracking Error")
         ax.legend()
         ax.grid(True)
-    
+
     def _plot_curvature(self, ax) -> None:
-        """Plot path curvature.
-        
-        Args:
-            ax: Matplotlib axis
-        """
-        if not self.control_log:
-            return
-            
-        curvatures = [entry["curvature"] for entry in self.control_log]
-        time_points = range(len(curvatures))
-        
-        ax.plot(time_points, curvatures, 'g-', linewidth=2)
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Curvature (1/m)')
-        ax.set_title('Path Curvature')
+        """Plot curvature over time."""
+        ax.plot(
+            self.data_logger["time"],
+            self.data_logger["curvature"],
+            "m-",
+            label="Curvature",
+        )
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Curvature (1/m)")
+        ax.set_title("Path Curvature")
+        ax.legend()
         ax.grid(True)
-    
+
     def _plot_linear_control(self, ax) -> None:
-        """Plot linear control commands.
-        
-        Args:
-            ax: Matplotlib axis
-        """
-        if not self.control_log:
-            return
-            
-        controls = [entry["control"] for entry in self.control_log]
-        vx = [ctrl[0] for ctrl in controls]
-        vy = [ctrl[1] for ctrl in controls]
-        
-        time_points = range(len(controls))
-        ax.plot(time_points, vx, 'r-', label='Vx')
-        ax.plot(time_points, vy, 'b-', label='Vy')
-        
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Linear Velocity (m/s)')
-        ax.set_title('Linear Control Commands')
+        """Plot linear control outputs."""
+        ax.plot(
+            self.data_logger["time"],
+            self.data_logger["control_vx"],
+            "r-",
+            label="Control Vx",
+        )
+        ax.plot(
+            self.data_logger["time"],
+            self.data_logger["control_vy"],
+            "g-",
+            label="Control Vy",
+        )
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Linear Velocity (m/s)")
+        ax.set_title("Linear Control Output")
         ax.legend()
         ax.grid(True)
-    
+
     def _plot_angular_control(self, ax) -> None:
-        """Plot angular control commands.
-        
-        Args:
-            ax: Matplotlib axis
-        """
-        if not self.control_log:
-            return
-            
-        controls = [entry["control"] for entry in self.control_log]
-        w = [ctrl[2] for ctrl in controls]
-        
-        time_points = range(len(controls))
-        ax.plot(time_points, w, 'g-', linewidth=2)
-        
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Angular Velocity (rad/s)')
-        ax.set_title('Angular Control Commands')
-        ax.grid(True)
-    
-    def _plot_lookahead_points(self, ax) -> None:
-        """Plot lookahead points.
-        
-        Args:
-            ax: Matplotlib axis
-        """
-        if not self.control_log:
-            return
-            
-        lookaheads = [entry["lookahead"] for entry in self.control_log]
-        lx = [point[0] for point in lookaheads]
-        ly = [point[1] for point in lookaheads]
-        
-        ax.plot(lx, ly, 'm--', linewidth=1, label='Lookahead Points')
-        ax.set_title('Lookahead Points')
+        """Plot angular control output."""
+        ax.plot(
+            self.data_logger["time"],
+            self.data_logger["control_w"],
+            "b-",
+            label="Control W",
+        )
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Angular Velocity (rad/s)")
+        ax.set_title("Angular Control Output")
         ax.legend()
-        ax.grid(True) 
+        ax.grid(True)
+
+    def _plot_lookahead_points(self, ax) -> None:
+        """Plot lookahead points trajectory."""
+        ax.plot(
+            self.data_logger["lookahead_x"],
+            self.data_logger["lookahead_y"],
+            "c-",
+            label="Lookahead Points",
+            linewidth=2,
+            alpha=0.7,
+        )
+        ax.plot(
+            self.data_logger["x"],
+            self.data_logger["y"],
+            "b-",
+            label="Robot Path",
+            linewidth=1,
+        )
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_title("Lookahead Points")
+        ax.legend()
+        ax.grid(True)
+        ax.axis("equal")
+
+    def reset_arrival_state(self) -> None:
+        """Reset arrival state for reuse."""
+        self._arrived_logged = False
+        
+    def is_arrived(self) -> bool:
+        """Check if the controller has reached the target and logged arrival."""
+        return self._arrived_logged
