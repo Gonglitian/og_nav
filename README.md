@@ -101,8 +101,8 @@ navigator.set_goal((2.0, 3.0))  # Move to position (2.0, 3.0)
 
 # Main navigation loop
 while not navigator.is_arrived():
-    navigator.update()
-    env.step([])
+    action = navigator.update()
+    env.step(action)
 
 print("🎉 Navigation completed!")
 ```
