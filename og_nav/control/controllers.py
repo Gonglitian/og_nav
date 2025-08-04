@@ -294,8 +294,8 @@ class PathTrackingController:
             self._needs_initial_rotation = abs(heading_error) > self.heading_threshold
             self._initial_rotation_target = desired_heading if self._needs_initial_rotation else None
             
-            if self._needs_initial_rotation:
-                print(f"Initial rotation required: {np.degrees(abs(heading_error)):.1f}° to reach first waypoint")
+            # if self._needs_initial_rotation:
+                # print(f"Initial rotation required: {np.degrees(abs(heading_error)):.1f}° to reach first waypoint")
         else:
             self._needs_initial_rotation = False
             self._initial_rotation_target = None
@@ -303,8 +303,6 @@ class PathTrackingController:
         # Clear previous logging data
         for key in self.data_logger:
             self.data_logger[key].clear()
-
-        print(f"New path set with {len(waypoints)} waypoints")
 
     def find_lookahead_point(self, current_pos: th.Tensor) -> Tuple[float, float]:
         """Find lookahead point on the path.
@@ -473,8 +471,8 @@ class PathTrackingController:
                 control_w = np.sign(heading_error) * min(self.max_angular_vel, abs(heading_error))
                 
                 # Debug output for rotation mode
-                if len(self.data_logger["time"]) % 10 == 0:  # Print every 10th step
-                    print(f"[Initial rotation] Heading error: {np.degrees(heading_error):.1f}°, Target: {np.degrees(self._initial_rotation_target):.1f}°, Current: {np.degrees(current_yaw):.1f}°")
+                # if len(self.data_logger["time"]) % 10 == 0:  # Print every 10th step
+                    # print(f"[Initial rotation] Heading error: {np.degrees(heading_error):.1f}°, Target: {np.degrees(self._initial_rotation_target):.1f}°, Current: {np.degrees(current_yaw):.1f}°")
                 
                 # Log data and return early
                 self._log_control_data(
@@ -486,7 +484,7 @@ class PathTrackingController:
                 # Rotation complete
                 self._initial_rotation_done = True
                 self._needs_initial_rotation = False
-                print(f"Initial rotation completed. Starting Pure Pursuit tracking.")
+                # print(f"Initial rotation completed. Starting Pure Pursuit tracking.")
 
         # Normal Pure Pursuit mode
         # Transform to robot body frame

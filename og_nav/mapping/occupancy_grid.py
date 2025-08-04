@@ -8,6 +8,7 @@ import torch as th
 
 import omnigibson as og
 import omnigibson.lazy as lazy
+import omnigibson.utils.transform_utils as T
 from omnigibson.robots.tiago import Tiago
 
 
@@ -109,10 +110,6 @@ class OGMGenerator:
             self.tensor_map = self._bgr_to_tensor(img_bgr)
             self.bgr_map = img_bgr
 
-            print(f"Generated map: {w}x{h}, center={map_center}")
-            # note: save img for test
-            # cv2.imwrite("map.png", img_bgr)
-
             return self.bgr_map if return_img else self.tensor_map
 
         except Exception as e:
@@ -129,39 +126,122 @@ class OGMGenerator:
             Generated map tensor
         """
         try:
-            # move robot to sky
+            # Record robot info for post-processing
+            robot_info = None
             if env.robots:
-                robot: Tiago = env.robots[0]
+                robot = env.robots[0]
                 pos, ori = robot.get_position_orientation()
-                robot.set_position_orientation(
-                    th.as_tensor([0, 0, 100], dtype=th.float32),
-                )
-                for _ in range(5):
-                    env.step(th.zeros(robot.action_dim))
-            # generate map
+                
+                # Get robot's AABB extent (consistent with navigation.py)
+                
+                robot_info = {
+                    'position': pos,
+                    'orientation': ori,
+                    'aabb_extent': robot._reset_joint_pos_aabb_extent,
+                    'yaw': T.quat2euler(ori)[2]  # Get yaw angle
+                }
+            
+            # Generate map (robot stays in place)
             map_tensor = self.generate_grid_map(
                 map_center=(0, 0, 0),
                 lower_bound=(-15, -15, 0.1),
                 upper_bound=(15, 15, 0.5),
                 return_img=False,
             )
-            # put back robot
-            if env.robots:
-                robot: Tiago = env.robots[0]
-                robot.set_position_orientation(pos, ori)
-                for _ in range(5):
-                    env.step(th.zeros(robot.action_dim))
-            # update trav map
+            
+            # Post-process: clear robot area and save visualization
+            if robot_info:
+                self._clear_robot_area_and_save(map_tensor, robot_info)
+            
+            # Update environment's traversability map
             env.scene.trav_map.floor_map[0] = map_tensor
             env.scene.trav_map.map_size = map_tensor.shape[0]
 
-            print("Environment traversability map updated successfully")
             return map_tensor
 
         except Exception as e:
             print(f"[Error] Error updating environment traversability map: {e}")
             raise
 
+    def _clear_robot_area_and_save(self, map_tensor: th.Tensor, robot_info: dict, save_img: bool = False,save_path: str = "map_with_robot_bbox.png") -> None:
+        """Clear robot occupied area and save map image with bounding box.
+        
+        Args:
+            map_tensor: The occupancy grid map tensor
+            robot_info: Dictionary containing robot position, orientation, and AABB extent
+        """
+        # Get robot information
+        robot_x = robot_info['position'][0].item()
+        robot_y = robot_info['position'][1].item()
+        robot_yaw = robot_info['yaw']
+        
+        # AABB half extents (xy plane)
+        half_extent_x = robot_info['aabb_extent'][0].item() / 2
+        half_extent_y = robot_info['aabb_extent'][1].item() / 2
+        
+        # Map parameters
+        map_size = map_tensor.shape[0]
+        world_size = 30.0  # From (-15, -15) to (15, 15)
+        
+        # World to pixel coordinate conversion
+        def world_to_pixel(x, y):
+            px = int((x + 15) / world_size * map_size)
+            py = int((y + 15) / world_size * map_size)
+            return px, py
+        
+        # Calculate rotated rectangle corners (world coordinates)
+        cos_yaw = np.cos(robot_yaw)
+        sin_yaw = np.sin(robot_yaw)
+        
+        # Local coordinate corners
+        corners_local = [
+            (-half_extent_x, -half_extent_y),
+            (half_extent_x, -half_extent_y),
+            (half_extent_x, half_extent_y),
+            (-half_extent_x, half_extent_y)
+        ]
+        
+        # Transform to world coordinates
+        corners_world = []
+        for lx, ly in corners_local:
+            # Rotate and translate
+            wx = robot_x + cos_yaw * lx - sin_yaw * ly
+            wy = robot_y + sin_yaw * lx + cos_yaw * ly
+            corners_world.append((wx, wy))
+        
+        # Convert to pixel coordinates
+        corners_pixel = [world_to_pixel(wx, wy) for wx, wy in corners_world]
+        
+        # Clear robot occupied area (fill rotated rectangle)
+        mask = np.zeros((map_size, map_size), dtype=np.uint8)
+        corners_np = np.array(corners_pixel, dtype=np.int32)
+        cv2.fillPoly(mask, [corners_np], 1)
+        
+        # Set mask area as traversable (255)
+        map_tensor[mask == 1] = 255
+        
+        # Save image with red bounding box
+        if save_img and hasattr(self, 'bgr_map') and self.bgr_map is not None:
+            # Copy for drawing
+            img_with_box = self.bgr_map.copy()
+            
+            # Draw red rectangle (BGR format: B=0, G=0, R=255)
+            cv2.polylines(img_with_box, [corners_np], isClosed=True, 
+                         color=(0, 0, 255), thickness=2)
+            
+            # Mark robot center with green dot
+            center_pixel = world_to_pixel(robot_x, robot_y)
+            cv2.circle(img_with_box, center_pixel, 3, (0, 255, 0), -1)
+            
+            # Add text info
+            text = f"Robot AABB: {half_extent_x*2:.2f}m x {half_extent_y*2:.2f}m"
+            cv2.putText(img_with_box, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
+                       0.7, (0, 0, 255), 2)
+            
+            # Save image
+            cv2.imwrite(save_path, img_with_box)
+            print(f"Saved map with robot bounding box to {save_path}")
+    
     def _bgr_to_tensor(self, map_img: np.ndarray) -> th.Tensor:
         """Convert BGR image to grayscale tensor.
 

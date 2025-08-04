@@ -56,6 +56,7 @@ class NavigationInterface:
         self.robot.controllers['arm_right']._command_input_limits = None
         
         # Update robot reset pose AABB extent
+        self.original_reset_joint_pos_aabb_extent = self.robot._reset_joint_pos_aabb_extent
         self.robot._reset_joint_pos_aabb_extent *= 1.1
         
         # Initialize modules with their respective configurations
@@ -89,8 +90,6 @@ class NavigationInterface:
         # Initialize visualization if enabled
         self._init_visualization()
         
-        print(f"NavigationInterface initialized (visualization: {self.visualization_enabled})")
-
     def _init_visualization(self):
         """Initialize visualization markers and keyboard callbacks."""
         if not self.visualization_enabled:

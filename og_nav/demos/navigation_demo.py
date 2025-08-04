@@ -12,6 +12,7 @@ from og_nav.core.config_loader import NavigationConfig
 import os
 import torch as th
 import random
+import time
 
 gm.GUI_VIEWPORT_ONLY = True
 
@@ -42,7 +43,18 @@ def main():
     # Visit goal points sequentially
     navigator.set_random_available_goal()
     # Main loop
+    step = 0
     while True:
+        # Update map
+        # cal time for each update
+        if step % 100 == 0:
+            # calc time for each update
+            start_time = time.time()
+            navigator.ogm.update_env_trav_map(env)
+            end_time = time.time()
+            print(f"Time for map update: {end_time - start_time} seconds")
+        step += 1
+        
         # Update environment and navigation
         action = navigator.update()
         env.step(action)
