@@ -17,7 +17,7 @@ og_nav:
     cruise_speed: 0.3                 # Constant forward speed (m/s)
     max_angular_vel: 0.2              # Maximum angular velocity (rad/s)
     waypoint_threshold: 0.2           # Distance threshold for waypoint arrival (m)
-    heading_threshold: 0.3            # Angle threshold for in-place rotation (rad, ~17 degrees)
+    heading_threshold: 0.1            # Angle threshold for in-place rotation (rad)
 
   # Robot Configuration
   robot:
@@ -58,8 +58,8 @@ og_nav:
 scene:
   type: InteractiveTraversableScene
   scene_model: Pomaria_1_int
-  # load_object_categories: [floors, walls]
-  not_load_object_categories: [ceilings,roof]
+  load_object_categories: [floors, walls,door]
+  # not_load_object_categories: [ceilings,roof]
 
   # default_erosion_radius: Config.DEFAULT_EROSION_RADIUS
 

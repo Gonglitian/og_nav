@@ -275,7 +275,13 @@ class NavigationInterface:
         # Plan path to the new goal
         self.current_path = self.planner.plan_path()
         if self.current_path is not None:
-            self.controller.set_path(self.current_path)
+            # Skip first waypoint if there are multiple waypoints
+            path_to_use = self.current_path
+            if len(self.current_path) >= 2:
+                path_to_use = self.current_path[1:]  # Skip the first waypoint
+                # print(f"Skipped first waypoint, using {len(path_to_use)} waypoints for tracking")
+            
+            self.controller.set_path(path_to_use)
             self._update_waypoint_markers()
             print(f"Path planned to goal: {goal_position}")
             return True
