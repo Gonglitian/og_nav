@@ -13,7 +13,7 @@ og_nav:
     
   # Path Tracking Controller Configuration
   controller:
-    lookahead_distance: 0.3           # Pure pursuit lookahead distance (m)
+    lookahead_distance: 0.4           # Pure pursuit lookahead distance (m)
     cruise_speed: 0.3                 # Constant forward speed (m/s)
     max_angular_vel: 0.2              # Maximum angular velocity (rad/s)
     waypoint_threshold: 0.2           # Distance threshold for waypoint arrival (m)
