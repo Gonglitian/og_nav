@@ -1,17 +1,13 @@
 """Navigation interface for environment setup and navigation control."""
 
-import os
-from typing import List, Optional, Tuple
+from typing import Tuple
 
-import numpy as np
 import torch as th
-import yaml
+import random
 
 import omnigibson as og
 import omnigibson.lazy as lazy
 from omnigibson.robots.tiago import Tiago
-from omnigibson.controllers import JointController
-from omnigibson.objects.primitive_object import PrimitiveObject
 from omnigibson.utils.ui_utils import KeyboardEventHandler
 
 from og_nav.mapping.occupancy_grid import OGMGenerator
@@ -282,8 +278,10 @@ class NavigationInterface:
             self.controller.set_path(self.current_path)
             self._update_waypoint_markers()
             print(f"Path planned to goal: {goal_position}")
+            return True
         else:
             print("Failed to plan path to goal")
+            return False
 
     def update(self) -> th.Tensor:
         """Update the navigation controller and return action.
@@ -320,3 +318,10 @@ class NavigationInterface:
     def is_arrived(self) -> bool:
         """Check if the robot has arrived at the goal."""
         return self.controller.is_arrived()
+    
+    def set_random_available_goal(self):
+        goal_flag = False
+        while not goal_flag:
+            goal_position = (random.uniform(-10, 10), random.uniform(-10, 10))
+            goal_flag = self.set_goal(goal_position)
+        return goal_position

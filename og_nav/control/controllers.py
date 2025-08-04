@@ -150,7 +150,8 @@ class PathTrackingController:
             'lookahead_distance': 0.5,
             'cruise_speed': 0.5,
             'max_angular_vel': 0.2,
-            'waypoint_threshold': 0.2
+            'waypoint_threshold': 0.2,
+            'heading_threshold': 0.3  # Angle threshold in radians for switching to in-place rotation
         }
 
     def __init__(
@@ -160,6 +161,7 @@ class PathTrackingController:
         cruise_speed: Optional[float] = None,
         max_angular_vel: Optional[float] = None,
         waypoint_threshold: Optional[float] = None,
+        heading_threshold: Optional[float] = None,
         dt: Optional[float] = None,
         config: Optional[dict] = None,
     ) -> None:
@@ -176,6 +178,7 @@ class PathTrackingController:
             cruise_speed: Constant forward speed
             max_angular_vel: Maximum angular velocity
             waypoint_threshold: Distance threshold for waypoint arrival
+            heading_threshold: Angle threshold for switching to in-place rotation
             dt: Control time step
             config: Controller configuration dict
         """
@@ -192,6 +195,7 @@ class PathTrackingController:
         self.cruise_speed = cruise_speed if cruise_speed is not None else merged_config['cruise_speed']
         self.max_angular_vel = max_angular_vel if max_angular_vel is not None else merged_config['max_angular_vel']
         self.waypoint_threshold = waypoint_threshold if waypoint_threshold is not None else merged_config['waypoint_threshold']
+        self.heading_threshold = heading_threshold if heading_threshold is not None else merged_config.get('heading_threshold', 0.3)
         
         self.dt = dt if dt is not None else og.sim.get_sim_step_dt()
         
@@ -200,12 +204,19 @@ class PathTrackingController:
             'lookahead_distance': self.lookahead_distance,
             'cruise_speed': self.cruise_speed,
             'max_angular_vel': self.max_angular_vel,
-            'waypoint_threshold': self.waypoint_threshold
+            'waypoint_threshold': self.waypoint_threshold,
+            'heading_threshold': self.heading_threshold
         }
         
         # Path and tracking state
         self.path: List[Tuple[float, float]] = []
         self.current_target_idx = 0
+        
+        # Initial rotation state management
+        self._is_new_path = False
+        self._initial_rotation_done = False
+        self._needs_initial_rotation = False
+        self._initial_rotation_target = None
         
         # Centralized arrival state management
         self._arrival_state = ArrivalState()
@@ -238,7 +249,7 @@ class PathTrackingController:
         }
 
         print(
-            f"Pure Pursuit Controller initialized: lookahead={lookahead_distance}m, speed={cruise_speed}m/s"
+            f"Pure Pursuit Controller initialized: lookahead={self.lookahead_distance}m, speed={self.cruise_speed}m/s, heading_threshold={self.heading_threshold}rad"
         )
 
     def set_path(
@@ -257,6 +268,37 @@ class PathTrackingController:
         
         # Reset arrival state for new path
         self._arrival_state.reset()
+        
+        # Set new path flags
+        self._is_new_path = True
+        self._initial_rotation_done = False
+        
+        # Calculate if initial rotation is needed
+        if len(waypoints) > 0:
+            current_pos, current_orientation = self.robot.get_position_orientation()
+            current_yaw = T.quat2euler(current_orientation)[2]
+            
+            # Calculate direction to first waypoint
+            dx = waypoints[0][0] - current_pos[0].item()
+            dy = waypoints[0][1] - current_pos[1].item()
+            desired_heading = np.arctan2(dy, dx)
+            
+            # Calculate heading error (normalize to [-pi, pi])
+            heading_error = desired_heading - current_yaw
+            while heading_error > np.pi:
+                heading_error -= 2 * np.pi
+            while heading_error < -np.pi:
+                heading_error += 2 * np.pi
+            
+            # Determine if initial rotation is needed
+            self._needs_initial_rotation = abs(heading_error) > self.heading_threshold
+            self._initial_rotation_target = desired_heading if self._needs_initial_rotation else None
+            
+            if self._needs_initial_rotation:
+                print(f"Initial rotation required: {np.degrees(abs(heading_error)):.1f}° to reach first waypoint")
+        else:
+            self._needs_initial_rotation = False
+            self._initial_rotation_target = None
 
         # Clear previous logging data
         for key in self.data_logger:
@@ -325,6 +367,10 @@ class PathTrackingController:
         Args:
             current_pos: Current robot position [x, y]
         """
+        # Skip waypoint update if we're in initial rotation phase
+        if self._needs_initial_rotation and not self._initial_rotation_done:
+            return
+            
         if not self.path or self.current_target_idx >= len(self.path):
             return
 
@@ -342,6 +388,10 @@ class PathTrackingController:
                     f"Advanced to waypoint {self.current_target_idx + 1}/{len(self.path)} {self.path[self.current_target_idx]}"
                 )
                 self.current_target_idx += 1
+                
+                # Clear new path flag when we move past the first waypoint
+                if self.current_target_idx >= 1:
+                    self._is_new_path = False
             else:
                 break
 
@@ -402,7 +452,43 @@ class PathTrackingController:
         # Calculate relative position to lookahead point in world frame
         dx_world = lookahead_x - current_pos[0].item()
         dy_world = lookahead_y - current_pos[1].item()
+        
+        # Priority check: Initial rotation for new paths
+        if self._needs_initial_rotation and not self._initial_rotation_done:
+            # Use the saved target heading instead of recalculating
+            heading_error = self._initial_rotation_target - current_yaw
+            
+            # Normalize heading error to [-pi, pi]
+            while heading_error > np.pi:
+                heading_error -= 2 * np.pi
+            while heading_error < -np.pi:
+                heading_error += 2 * np.pi
+            
+            # Check if rotation is still needed
+            if abs(heading_error) > self.heading_threshold:
+                # In-place rotation mode
+                control_vx = 0.0
+                control_vy = 0.0
+                # Use proportional control for angular velocity
+                control_w = np.sign(heading_error) * min(self.max_angular_vel, abs(heading_error))
+                
+                # Debug output for rotation mode
+                if len(self.data_logger["time"]) % 10 == 0:  # Print every 10th step
+                    print(f"[Initial rotation] Heading error: {np.degrees(heading_error):.1f}°, Target: {np.degrees(self._initial_rotation_target):.1f}°, Current: {np.degrees(current_yaw):.1f}°")
+                
+                # Log data and return early
+                self._log_control_data(
+                    current_pos, current_yaw, lookahead_x, lookahead_y,
+                    dx_world, dy_world, control_vx, control_vy, control_w, 0.0
+                )
+                return control_vx, control_vy, control_w
+            else:
+                # Rotation complete
+                self._initial_rotation_done = True
+                self._needs_initial_rotation = False
+                print(f"Initial rotation completed. Starting Pure Pursuit tracking.")
 
+        # Normal Pure Pursuit mode
         # Transform to robot body frame
         cos_yaw = np.cos(current_yaw)
         sin_yaw = np.sin(current_yaw)
@@ -677,6 +763,11 @@ class PathTrackingController:
     def reset_arrival_state(self) -> None:
         """Reset arrival state for reuse."""
         self._arrival_state.reset()
+        # Also reset initial rotation state
+        self._is_new_path = False
+        self._initial_rotation_done = False
+        self._needs_initial_rotation = False
+        self._initial_rotation_target = None
         
     def is_arrived(self) -> bool:
         """Check if the controller has reached the target."""

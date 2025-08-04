@@ -13,10 +13,11 @@ og_nav:
     
   # Path Tracking Controller Configuration
   controller:
-    lookahead_distance: 0.5           # Pure pursuit lookahead distance (m)
+    lookahead_distance: 0.3           # Pure pursuit lookahead distance (m)
     cruise_speed: 0.3                 # Constant forward speed (m/s)
     max_angular_vel: 0.2              # Maximum angular velocity (rad/s)
     waypoint_threshold: 0.2           # Distance threshold for waypoint arrival (m)
+    heading_threshold: 0.3            # Angle threshold for in-place rotation (rad, ~17 degrees)
 
   # Robot Configuration
   robot:
@@ -57,12 +58,48 @@ og_nav:
 scene:
   type: InteractiveTraversableScene
   scene_model: Pomaria_1_int
-  load_object_categories: [floors, walls]
+  # load_object_categories: [floors, walls]
+  not_load_object_categories: [ceilings,roof]
+
   # default_erosion_radius: Config.DEFAULT_EROSION_RADIUS
+
+# ## note for scene structure:  
+  # 3. 结构类别特殊处理
+  #   在 omnigibson/utils/constants.py 中定义了 STRUCTURE_CATEGORIES:
+  #   STRUCTURE_CATEGORIES = frozenset({"floors", "walls", "ceilings", "lawn", "driveway", "fence", "roof", "background"})
+
+  #   这些结构类别在白名单检查时被特殊处理 - 即使在任务相关模式下，它们也会被视为"任务相关"，确保场景的基本结构始终被加载。
+
+  #   4. 实际使用示例
+
+  #   # 只加载基本结构 (快速加载模式)
+  #   scene:
+  #     load_object_categories: [floors, walls, ceilings]
+  #     not_load_object_categories: null
+
+  #   # 排除某些类别
+  #   scene:
+  #     load_object_categories: null
+  #     not_load_object_categories: [ceiling]  # 不加载天花板
+
+  #   # 选择性加载
+  #   scene:
+  #     load_object_categories: [floors, walls, coffee_table, bed]
+  #     not_load_object_categories: null
+
+  #   5. 工作流程
+
+  #   1. 场景加载时，读取 JSON 文件中的所有对象信息
+  #   2. 对每个对象调用 _should_load_object 方法
+  #   3. 根据对象的 category 属性判断：
+  #     - 如果在黑名单中 → 不加载
+  #     - 如果没有设置白名单 → 加载（除非在黑名单中）
+  #     - 如果设置了白名单 → 只有在白名单中的才加载
+  #     - 结构类别通常会被特殊对待，确保场景完整性
 
 robots:
   - type: Tiago
-    position: [-2.2, -2, 0]
+    position: [-10, 1.8, 0]
     reset_joint_pos: [
       # Base joints (6 DOF: x, y, z, rx, ry, rz)
       0, 0, 0, 0, 0, 0,
