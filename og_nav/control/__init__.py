@@ -5,7 +5,7 @@ This module provides robot control functionality including:
 - Robot joint control utilities
 """
 
-from og_nav.control.controllers import PathTrackingController, PIDController
+from og_nav.control.controllers import PathTrackingController
 from og_nav.control.arrival_state import ArrivalState
 from og_nav.control.control_utils import (
     get_joint_velocity_summary,
@@ -23,7 +23,6 @@ from og_nav.control.control_utils import (
 
 __all__ = [
     # Controllers
-    "PIDController",
     "PathTrackingController",
     "ArrivalState",
     # Robot control

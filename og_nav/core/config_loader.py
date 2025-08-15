@@ -234,7 +234,8 @@ class OGMConfig:
     @staticmethod
     def get_default_cfg() -> Dict[str, Any]:
         return {
-            'resolution': 0.1
+            'resolution': 0.1,
+            'world_size': 30  # World coordinate range in meters (from -world_size/2 to +world_size/2)
         }
 
 

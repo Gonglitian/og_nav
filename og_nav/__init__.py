@@ -16,8 +16,8 @@ from og_nav.core import NavigationInterface
 # Import other commonly used components
 from og_nav.core.config_loader import NavigationConfig
 from og_nav.planning import PathPlanner, is_point_available, find_nearest_available_point
-from og_nav.control import PathTrackingController, PIDController
-from og_nav.mapping import OGMGenerator
+from og_nav.control import PathTrackingController
+from og_nav.mapping import OccupancyGridMap
 
 __all__ = [
     # Main interface
@@ -32,7 +32,7 @@ __all__ = [
     "PathTrackingController",
     "PIDController", 
     # Mapping
-    "OGMGenerator",
+    "OccupancyGridMap",
 ]
 
 # Import version from setuptools_scm generated file

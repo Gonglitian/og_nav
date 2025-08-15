@@ -63,43 +63,47 @@ class PathPlanner:
                 result[key] = value
         return result
 
-    def set_start_point(self, position: Tuple[float, float]) -> None:
+    def set_start_point(self, position: Tuple[float, float], must_be_available: bool = True) -> None:
         """Set start point for path planning.
 
         Args:
             position: (x, y) coordinates
+            must_be_available: If True, the start point must be available. If False, the start point can be unavailable.
         """
-        # Check if point is available
-        if not is_point_available(position[0], position[1], self.env, self.robot):
-            print("[Warning] Start point not available, finding nearest valid point...")
-            nearest = find_nearest_available_point(position[0], position[1], self.env, self.robot)
-            if nearest is None:
-                print("[Error] No valid start point found nearby")
-                return
-            position = (nearest[0], nearest[1])
+        # Check point availability and find nearest if needed
+        if must_be_available:
+            if not is_point_available(position[0], position[1], self.env, self.robot):
+                print(f"[Warning] Start point {position} is not available, finding nearest valid point...")
+                nearest_point = find_nearest_available_point(position[0], position[1], self.env, self.robot)
+                if nearest_point:
+                    position = (nearest_point[0], nearest_point[1])
+                    print(f"Using nearest available point: {position}")
+                else:
+                    print("[Error] No available point found near start position")
+                    return
 
         self.start_point_coords = position
-        print(f"Start point set to: {position}")
 
-    def set_goal_point(self, position: Tuple[float, float]) -> None:
+    def set_goal_point(self, position: Tuple[float, float], must_be_available: bool = True) -> None:
         """Set the goal point for path planning.
 
         Args:
             position: (x, y) coordinates for goal point
+            must_be_available: If True, the goal point must be available. If False, the goal point can be unavailable.
         """
         # Check point availability and find nearest if needed
-        if not is_point_available(position[0], position[1], self.env, self.robot):
-            print(f"[Warning] Goal point {position} is not available")
-            nearest_point = find_nearest_available_point(position[0], position[1], self.env, self.robot)
-            if nearest_point:
-                position = (nearest_point[0], nearest_point[1])
-                print(f"Using nearest available point: {position}")
-            else:
-                print("[Error] No available point found near goal position")
-                return
+        if must_be_available:
+            if not is_point_available(position[0], position[1], self.env, self.robot):
+                print(f"[Warning] Goal point {position} is not available, finding nearest valid point...")
+                nearest_point = find_nearest_available_point(position[0], position[1], self.env, self.robot)
+                if nearest_point:
+                    position = (nearest_point[0], nearest_point[1])
+                    print(f"Using nearest available point: {position}")
+                else:
+                    print("[Error] No available point found near goal position")
+                    return
 
         self.goal_point_coords = position
-        print(f"Goal point set to: {position}")
 
     def clear_coordinates(self) -> None:
         """Clear all stored coordinates."""
@@ -138,8 +142,13 @@ class PathPlanner:
         self.waypoints_coords, _ = self.scene.trav_map.get_shortest_path(
             0, start_pos, end_pos, entire_path=True, robot=self.robot
         )
-        print(f"Path planned with {len(self.waypoints_coords)} waypoints")
-        return self.waypoints_coords
+        
+        if self.waypoints_coords is not None:
+            print(f"Path planned with {len(self.waypoints_coords)} waypoints")
+            return self.waypoints_coords
+        else:
+            print("[Error] Failed to plan path - no valid path found")
+            return None
 
     def get_start_point_coords(self) -> Optional[Tuple[float, float]]:
         """Get current start point coordinates.

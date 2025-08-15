@@ -1,4 +1,4 @@
-from og_nav.mapping import OGMGenerator
+from og_nav.mapping import OccupancyGridMap
 import cv2
 import numpy as np
 from typing import Dict, Tuple
@@ -28,7 +28,7 @@ class OGMScrollUI:
         "upper_z": (100, 0, 300),  # 0.0 to 3.0
     }
 
-    def __init__(self, generator: OGMGenerator) -> None:
+    def __init__(self, generator: OccupancyGridMap) -> None:
         """
         Initialize interactive UI.
 

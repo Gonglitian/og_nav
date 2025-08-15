@@ -4,8 +4,8 @@ This module provides mapping functionality including:
 - Occupancy grid map generation
 """
 
-from og_nav.mapping.occupancy_grid import OGMGenerator
+from og_nav.mapping.occupancy_grid import OccupancyGridMap
 
 __all__ = [
-    "OGMGenerator",
+    "OccupancyGridMap",
 ]

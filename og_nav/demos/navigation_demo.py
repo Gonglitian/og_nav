@@ -11,7 +11,6 @@ from og_nav.core import NavigationInterface
 from og_nav.core.config_loader import NavigationConfig
 import os
 import torch as th
-import random
 import time
 
 gm.GUI_VIEWPORT_ONLY = True
@@ -51,6 +50,8 @@ def main():
             # calc time for each update
             start_time = time.time()
             navigator.ogm.update_env_trav_map(env)
+            # save map tensor to image
+            # navigator.ogm.save_grayscale_tensor_to_image(navigator.ogm.map_tensor, "map_tensor.png")
             end_time = time.time()
             print(f"Time for map update: {end_time - start_time} seconds")
         step += 1
@@ -61,9 +62,16 @@ def main():
         
         # Check if current goal is reached
         if navigator.is_arrived():
-            print(f"✓ Reached goal")
+            status = navigator.get_navigation_status()
+            print(f"✓ Reached goal! Navigation status: {status}")
             # Move to next goal point
-            navigator.set_random_available_goal()
+            goal_pos = navigator.set_random_available_goal()
+            print(f"→ New random goal set: {goal_pos}")
+        
+        # Print detailed status every 500 steps for debugging
+        if step % 500 == 0 and step > 0:
+            status = navigator.get_navigation_status()
+            print(f"[Step {step}] Navigation status: {status}")
 
 if __name__ == "__main__":
     main()

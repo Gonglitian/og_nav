@@ -10,7 +10,7 @@ import omnigibson.lazy as lazy
 from omnigibson.robots.tiago import Tiago
 from omnigibson.utils.ui_utils import KeyboardEventHandler
 
-from og_nav.mapping.occupancy_grid import OGMGenerator
+from og_nav.mapping.occupancy_grid import OccupancyGridMap
 from og_nav.planning.path_planning import PathPlanner
 from og_nav.control.controllers import PathTrackingController
 from og_nav.core.config_loader import NavigationConfig
@@ -57,7 +57,7 @@ class NavigationInterface:
         
         # Update robot reset pose AABB extent
         self.original_reset_joint_pos_aabb_extent = self.robot._reset_joint_pos_aabb_extent
-        self.robot._reset_joint_pos_aabb_extent *= 1.1
+        self.robot._reset_joint_pos_aabb_extent *= 1.3
         
         # Initialize modules with their respective configurations
         ogm_config = self.config.get_ogm_config()
@@ -71,17 +71,14 @@ class NavigationInterface:
         self.controller = PathTrackingController(robot=self.robot, config=controller_config)
         
         # Initialize OGM with configuration
-        self.ogm = OGMGenerator(config=ogm_config)
+        self.ogm = OccupancyGridMap(config=ogm_config)
         
         # Initialize state variables
         self.step_count = 0
-
-        # Adjust robot reset pose AABB extent
-        self.robot._reset_joint_pos_aabb_extent *= 1.2
-
+        
         # Update environment traversability map
         self.ogm.update_env_trav_map(env)
-
+        
         # Navigation state
         self.current_path = None
         self.goal_position = None
@@ -145,6 +142,12 @@ class NavigationInterface:
             callback_fn=self._plan_current_path
         )
 
+        # R: Reset robot pose
+        KeyboardEventHandler.add_keyboard_callback(
+            key=lazy.carb.input.KeyboardInput.R, 
+            callback_fn=self._reset_robot_pose
+        )
+
         self._print_controls()
 
     def _set_start_from_camera(self):
@@ -152,6 +155,7 @@ class NavigationInterface:
         try:
             camera_pos = og.sim._viewer_camera.get_position_orientation()[0]
             self.set_goal((camera_pos[0].item(), camera_pos[1].item()), is_start=True)
+            print(f"Start point set to: {camera_pos[:2]}")
         except Exception as e:
             print(f"[Error] Failed to set start point from camera: {e}")
 
@@ -160,6 +164,7 @@ class NavigationInterface:
         try:
             camera_pos = og.sim._viewer_camera.get_position_orientation()[0]
             self.set_goal((camera_pos[0].item(), camera_pos[1].item()))
+            print(f"Goal point set to: {camera_pos[:2]}")
         except Exception as e:
             print(f"[Error] Failed to set goal point from camera: {e}")
 
@@ -167,10 +172,14 @@ class NavigationInterface:
         """Plan path using current start and goal points."""
         if self.planner.start_point_coords and self.planner.goal_point_coords:
             self.current_path = self.planner.plan_path()
-            if self.current_path:
+            if self.current_path is not None:
                 self.controller.set_path(self.current_path)
                 self._update_waypoint_markers()
 
+    def _reset_robot_pose(self):
+        """Reset robot pose to original position."""
+        self.robot.set_position_orientation(position=self.robot.get_position_orientation()[0], orientation=th.tensor([0, 0, 0, 1]))
+    
     def _print_controls(self):
         """Print available keyboard controls."""
         print("\n=== Navigation Controls ===")
@@ -198,7 +207,7 @@ class NavigationInterface:
             return
 
         goal_coords = self.planner.get_goal_point_coords()
-        if goal_coords:
+        if goal_coords is not None:
             marker_height = self.config.get('visualization.marker_height', 0.1)
             self.end_point_marker.set_position_orientation(
                 th.as_tensor([goal_coords[0], goal_coords[1], marker_height], dtype=th.float32)
@@ -264,7 +273,7 @@ class NavigationInterface:
         self.goal_position = goal_position
         
         # Set start point as current robot position
-        self.planner.set_start_point(self.robot.get_position_orientation()[0][:2])
+        self.planner.set_start_point(self.robot.get_position_orientation()[0][:2], must_be_available=False)
         self.planner.set_goal_point(goal_position)
 
         # Update markers
@@ -282,10 +291,14 @@ class NavigationInterface:
             
             self.controller.set_path(path_to_use)
             self._update_waypoint_markers()
-            print(f"Path planned to goal: {goal_position}")
+            
+            # Log navigation status after successful planning
+            status = self.get_navigation_status()
             return True
         else:
-            print("Failed to plan path to goal")
+            # Log navigation status after planning failure
+            status = self.get_navigation_status()
+            print(f"Failed to plan path to goal: {goal_position} (status: {status})")
             return False
 
     def update(self) -> th.Tensor:
@@ -297,10 +310,14 @@ class NavigationInterface:
         self.step_count += 1
         
         # Get control action from the controller
-        action = self.controller.control()
+        # If no valid path is available, use no-op action
+        if self.current_path is None or len(self.current_path) == 0:
+            action = self.controller.no_op()
+        else:
+            action = self.controller.control()
         
         # If we've arrived at the goal, clear the path markers
-        if self.controller.is_arrived():
+        if self.is_arrived():
             self.clear_all_markers()
             
         # Set arm positions to navigation pose
@@ -321,12 +338,73 @@ class NavigationInterface:
         return action
 
     def is_arrived(self) -> bool:
-        """Check if the robot has arrived at the goal."""
+        """Check if the robot has arrived at the goal.
+        
+        Returns:
+            True if robot has arrived at the goal, False otherwise
+        """
         return self.controller.is_arrived()
     
+    def has_valid_path(self) -> bool:
+        """Check if there is a valid navigation path.
+        
+        Returns:
+            True if a valid path is available for navigation, False otherwise
+        """
+        return (self.current_path is not None and 
+                len(self.current_path) > 0 and 
+                self.controller.has_valid_path())
+    
+    def get_navigation_status(self) -> dict:
+        """Get comprehensive navigation status information.
+        
+        Returns:
+            Dictionary containing navigation status details
+        """
+        return {
+            'has_path': self.has_valid_path(),
+            'is_arrived': self.is_arrived() if self.has_valid_path() else False,
+            'current_path_length': len(self.current_path) if self.current_path is not None else 0,
+            'goal_position': self.goal_position,
+            'step_count': self.step_count
+        }
+    
+    def is_position_valid(self, world_x: float, world_y: float) -> bool:
+        """Check if a world position is in a valid (traversable) area on the map.
+        
+        Args:
+            world_x: X coordinate in world space
+            world_y: Y coordinate in world space
+            
+        Returns:
+            True if position is valid (map value is 255), False otherwise
+        """
+        if self.ogm.map_tensor is None:
+            return False
+            
+        try:
+            pixel_x, pixel_y = self.ogm.trav_map.world_to_map(th.tensor([world_x, world_y]))
+            map_size = self.ogm.trav_map.map_size
+            
+            # Check if coordinates are within map bounds
+            if 0 <= pixel_x < map_size and 0 <= pixel_y < map_size:
+                # Check if the map value at this position is 255 (traversable)
+                map_value = self.ogm.map_tensor[pixel_y, pixel_x].item()
+                return map_value == 255
+            else:
+                return False
+        except Exception as e:
+            print(f"Error checking position validity: {e}")
+            return False
+    
     def set_random_available_goal(self):
-        goal_flag = False
-        while not goal_flag:
-            goal_position = (random.uniform(-10, 10), random.uniform(-10, 10))
-            goal_flag = self.set_goal(goal_position)
-        return goal_position
+        """Set a random goal position that is in a valid (traversable) area on the map."""
+        _, goal_position = self.ogm.trav_map.get_random_point(floor=0, robot=self.robot)
+        
+        self.set_goal(goal_position[:2])
+        
+        return goal_position[:2]
+    
+    def env_no_op(self):
+        action = th.zeros(self.robot.action_dim)
+        self.env.step(action)

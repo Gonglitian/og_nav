@@ -20,7 +20,6 @@ og_nav:
     waypoint_threshold: 0.15           # Distance threshold for waypoint arrival (m)
     heading_threshold: 0.1            # Angle threshold for in-place rotation (rad)
 
-
   # Robot Configuration
   robot:
     # Robot reset pose (all joint positions)
@@ -59,7 +58,7 @@ og_nav:
 # ===================== Compatible Full Scene Configuration =====================
 scene:
   type: InteractiveTraversableScene
-  scene_model: Pomaria_1_int
+  scene_model: office_vendor_machine
   load_object_categories: [floors, walls]
   # not_load_object_categories: [ceilings,roof]
 
@@ -101,7 +100,7 @@ scene:
 
 robots:
   - type: Tiago
-    # position: [-10, 1.8, 0]
+    position: [-1.3625,  3.7787, 0]
     reset_joint_pos: [
       # Base joints (6 DOF: x, y, z, rx, ry, rz)
       0, 0, 0, 0, 0, 0,
