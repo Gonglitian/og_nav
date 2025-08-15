@@ -23,7 +23,8 @@ A comprehensive, modular navigation system designed for robot navigation in Omni
 
 ### 🎮 **Sophisticated Control Systems**
 - **Pure Pursuit Algorithm**: Advanced path following with configurable lookahead
-- **PID Controllers**: Precise velocity and heading control
+- **Path Tracking Controller**: Smooth trajectory following with adaptive control
+- **Arrival State Management**: Centralized arrival detection and state tracking
 - **Dynamic Action Management**: Automatic action tensor generation for Tiago robot
 - Support for both base movement and arm pose management
 
@@ -31,7 +32,8 @@ A comprehensive, modular navigation system designed for robot navigation in Omni
 - Real-time occupancy grid generation using OmniGibson
 - Configurable map resolution and update strategies
 - Automatic robot occlusion handling for accurate mapping
-- Export capabilities for various map formats
+- Robot collision area clearing for navigation safety
+- Mask-based processing with tensor caching
 
 ### 🎨 **Rich Visualization**
 - Interactive 3D markers for start/goal/waypoints
@@ -84,8 +86,7 @@ The package automatically installs the following dependencies:
 
 ```python
 import omnigibson as og
-from og_nav import NavigationInterface
-from og_nav.core.config_loader import NavigationConfig
+from og_nav import NavigationInterface, NavigationConfig
 
 # Create environment
 config_path = "og_nav/configs/navigation_config.yaml"
@@ -113,7 +114,7 @@ print("🎉 Navigation completed!")
 from og_nav import NavigationInterface, NavigationConfig
 from og_nav.planning import PathPlanner
 from og_nav.control import PathTrackingController
-from og_nav.mapping import OGMGenerator
+from og_nav.mapping import OccupancyGridMap
 
 # Custom configuration
 custom_config = {
@@ -137,7 +138,7 @@ navigator = NavigationInterface(env, robot, custom_config)
 # Use individual components
 planner = PathPlanner(env, robot, config=custom_config.get('planning', {}))
 controller = PathTrackingController(robot, config=custom_config['controller'])
-mapper = OGMGenerator(config=custom_config['ogm'])
+mapper = OccupancyGridMap(config=custom_config['ogm'])
 ```
 
 ## 🎯 Interactive Controls
@@ -162,15 +163,18 @@ og_nav/
 │   ├── path_planning.py          # PathPlanner with OmniGibson integration
 │   └── utils.py                  # Planning utilities
 ├── control/                       # Robot control systems
-│   ├── controllers.py            # Pure Pursuit and PID controllers
+│   ├── controllers.py            # PathTrackingController with Pure Pursuit
+│   ├── arrival_state.py          # Centralized arrival state management
 │   └── control_utils.py          # Joint and action management utilities
 ├── mapping/                       # Occupancy grid mapping
-│   └── occupancy_grid.py         # OGMGenerator for real-time mapping
+│   └── occupancy_grid.py         # OccupancyGridMap for real-time mapping
 ├── demos/                         # Example demonstrations
-│   └── navigation_demo.py        # Complete navigation demo
+│   ├── navigation_demo.py        # Complete navigation demo
+│   └── test_90_degree_angle_tracking.py  # Angle tracking test demo
 ├── configs/                       # Configuration files
 │   ├── navigation_config.yaml    # Main navigation configuration
-│   └── config.example.yaml       # Example configuration template
+│   ├── config.example.yaml       # Example configuration template
+│   └── test_90_degree_angle_tracking.yaml  # Test configuration
 ├── ogm_cv2_window/               # OpenCV visualization tools
 │   └── ui.py                     # Interactive UI components
 └── assets/                        # Documentation and resources
@@ -248,12 +252,57 @@ Explore the package capabilities with included demonstrations:
 # Basic navigation demo with sequential goal visiting
 python -m og_nav.demos.navigation_demo
 
+# Test 90-degree angle tracking capabilities
+python -m og_nav.demos.test_90_degree_angle_tracking
+
 # Test configuration system
 python -c "from og_nav.core.config_loader import NavigationConfig; print('Config system working!')"
 
 # Test with custom YAML config  
 python -c "from og_nav.core.config_loader import NavigationConfig; config = NavigationConfig(config_path='og_nav/configs/navigation_config.yaml'); print('YAML config loaded successfully!')"
 ```
+
+## 🏛️ Architecture Highlights
+
+### Unified Configuration System
+The package features a sophisticated configuration management system:
+- **NavigationConfig** class for unified config loading and validation
+- Module-specific configuration classes (OGMConfig, ControllerConfig, etc.)
+- Automatic visualization marker generation based on config
+- Configuration priority: Constructor args > YAML file > Module defaults
+- Built-in caching for frequently accessed values
+
+### Arrival State Management
+Recent architectural improvements include centralized arrival detection:
+- **ArrivalState** class provides single source of truth for arrival status
+- Eliminates state synchronization issues between components
+- Clean separation between control logic and state management
+- Simplified PathTrackingController API (returns only action tensor)
+
+### Key Components
+
+#### Core Navigation (`og_nav.core`)
+- **NavigationInterface**: Main entry point for navigation functionality
+- **NavigationConfig**: Unified configuration management
+- **Constants**: System-wide constants and default values
+
+#### Path Planning (`og_nav.planning`)
+- **PathPlanner**: OmniGibson-integrated path planning
+- **Planning Utils**: Point availability checking, nearest point finding
+
+#### Control Systems (`og_nav.control`)
+- **PathTrackingController**: Pure Pursuit implementation
+- **ArrivalState**: Centralized arrival detection and management
+- **Control Utils**: Joint control and action tensor utilities
+
+#### Mapping (`og_nav.mapping`)
+- **OccupancyGridMap**: Real-time occupancy grid generation
+- Robot collision area clearing
+- Mask-based processing and tensor caching
+
+#### Visualization (`og_nav.ogm_cv2_window`)
+- **Interactive UI**: OpenCV-based visualization tools
+- Real-time map display and path visualization
 
 ## 🏗️ Development
 

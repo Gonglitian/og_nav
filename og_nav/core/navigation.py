@@ -51,9 +51,12 @@ class NavigationInterface:
                 for arm_name in ["arm_left", "arm_right"]:
                     controller = self.robot.controllers[arm_name]
                     assert isinstance(controller, og.controllers.JointController)
-        # Unlock robot arm command input limits
+        # # Unlock robot arm command input limits
+        print(f"controllers: {self.robot.controllers}")
         self.robot.controllers['arm_left']._command_input_limits = None
         self.robot.controllers['arm_right']._command_input_limits = None
+        # # Unlock camera (head) command input limits
+        self.robot.controllers['camera']._command_input_limits = None
         
         # Update robot reset pose AABB extent
         self.original_reset_joint_pos_aabb_extent = self.robot._reset_joint_pos_aabb_extent

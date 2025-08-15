@@ -124,3 +124,9 @@ robots:
         use_delta_commands: false
         use_impedances: true
         command_input_limits: null
+      camera:
+        name: JointController
+        motor_type: position
+        use_delta_commands: false
+        use_impedances: true
+        command_input_limits: null
